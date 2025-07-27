@@ -33,70 +33,36 @@ index = pc.Index("hairstory-products")
 # List of fields and friendly prompts
 profile_fields = [
     ("hair_type", "How would you describe your hair type? (e.g., straight, wavy, curly, coily)"),
-    ("oiliness", "Is your scalp or hair oily, dry, normal, or a combination?"),
-    ("length", "How long is your hair? (short, medium, long)"),
-    ("concerns", "Do you have any hair concerns or goals? (e.g., breakage, volume, color-treated, etc.)"),
-    ("frizziness", "How would you rate your hair's frizziness? (low, medium, high)"),
-    ("curls", "How would you describe your curls? (none, loose, tight, coily, etc.)")
+    ("scalp_condition", "How would you describe your scalp condition? (e.g., dry, oily, normal)"),
+    ("length", "How long is your hair? (short, medium, long)")
 ]
 
 def map_user_input_to_field_value(field, user_input):
     """Map natural language user input to valid field values."""
     text = user_input.strip().lower()
     if field == "hair_type":
-        if any(word in text for word in ["straight", "no curl", "no wave"]):
+        if any(word in text for word in ["straight", "no curl", "no wave", "flat", "sleek", "silky", "smooth", "poker straight"]):
             return "straight"
-        if any(word in text for word in ["wavy", "wave", "loose wave"]):
+        if any(word in text for word in ["wavy", "wave", "loose wave", "beachy", "slight wave", "barely wavy", "natural wave"]):
             return "wavy"
-        if any(word in text for word in ["curly", "curl", "ringlet"]):
+        if any(word in text for word in ["curly", "curl", "ringlet", "bouncy", "frizzy", "defined curls", "spiral"]):
             return "curly"
-        if any(word in text for word in ["coily", "kinky", "tight curl"]):
+        if any(word in text for word in ["coily", "kinky", "tight curl", "springy", "afro-textured", "slinky-like", "coils"]):
             return "coily"
-    elif field == "oiliness":
-        if any(word in text for word in ["oily", "greasy", "need to wash often"]):
-            return "oily"
-        if any(word in text for word in ["dry", "flaky", "parched"]):
+    elif field == "scalp_condition":
+        if any(word in text for word in ["dry", "flaky", "parched", "itchy", "tight feeling", "peeling", "scaly"]):
             return "dry"
-        if any(word in text for word in ["normal", "balanced", "average"]):
+        if any(word in text for word in ["oily", "greasy", "need to wash often", "build-up", "shiny", "dirty fast", "heavy roots"]):
+            return "oily"
+        if any(word in text for word in ["normal", "balanced", "average", "healthy", "fine", "no issues"]):
             return "normal"
-        if any(word in text for word in ["combination", "mixed"]):
-            return "combination"
     elif field == "length":
-        if any(word in text for word in ["short", "pixie", "bob"]):
+        if any(word in text for word in ["short", "pixie", "bob", "ear length", "chin length", "above shoulders"]):
             return "short"
-        if any(word in text for word in ["medium", "shoulder", "mid-length", "mid length"]):
+        if any(word in text for word in ["medium", "shoulder", "mid-length", "mid length", "collarbone", "lob", "kind of in between"]):
             return "medium"
-        if any(word in text for word in ["long", "waist", "chest", "below shoulder"]):
+        if any(word in text for word in ["long", "waist", "chest", "below shoulder", "past shoulders", "mid-back", "waist length"]):
             return "long"
-    elif field == "concerns":
-        if any(word in text for word in ["none", "no concerns", "no issues"]):
-            return "none"
-        if any(word in text for word in ["breakage", "split ends"]):
-            return "breakage"
-        if any(word in text for word in ["volume", "flat"]):
-            return "volume"
-        if any(word in text for word in ["color", "color-treated", "dye", "colored", "no color"]):
-            return "color-treated"
-        if any(word in text for word in ["frizz", "frizzy"]):
-            return "frizziness"
-        if any(word in text for word in ["thinning", "hair loss"]):
-            return "thinning"
-    elif field == "frizziness":
-        if any(word in text for word in ["low", "not frizzy", "smooth"]):
-            return "low"
-        if any(word in text for word in ["medium", "sometimes frizzy"]):
-            return "medium"
-        if any(word in text for word in ["high", "very frizzy", "always frizzy"]):
-            return "high"
-    elif field == "curls":
-        if any(word in text for word in ["none", "no curls", "straight", "natural", "relaxed"]):
-            return "none"
-        if any(word in text for word in ["loose", "wavy", "waves"]):
-            return "loose"
-        if any(word in text for word in ["tight", "kinky"]):
-            return "tight"
-        if "coily" in text:
-            return "coily"
     return None
 
 def is_profile_complete(profile):
@@ -219,16 +185,25 @@ def build_profile_with_function_call(conversation_history):
     function_schema = [
         {
             "name": "build_hair_profile",
-            "description": "Extracts a complete hair profile from the user's conversation.",
+            "description": "Extract and normalize the user's hair profile from natural language, even if indirect, vague, or poetic. Always return the best matching value for each field, mapping descriptive terms to the closest structured option. If the user has already provided information in earlier messages, retain and merge it.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "hair_type": {"type": "string", "description": "e.g., straight, wavy, curly, coily"},
-                    "oiliness": {"type": "string", "description": "e.g., oily, dry, normal, combination"},
-                    "length": {"type": "string", "description": "e.g., short, medium, long"},
-                    "concerns": {"type": "string", "description": "e.g., breakage, volume, color-treated, etc."},
-                    "frizziness": {"type": "string", "description": "e.g., low, medium, high"},
-                    "curls": {"type": "string", "description": "e.g., none, loose, tight, coily, etc."}
+                    "hair_type": {
+                        "type": "string",
+                        "enum": ["straight", "wavy", "curly", "coily"],
+                        "description": "Identify the closest match for the user's hair texture. Map indirect descriptions to these categories. For example:\n- 'flat', 'sleek', 'silky', 'no texture', 'smooth', 'poker straight' → straight\n- 'loose bends', 'beachy', 'slight wave', 'barely wavy', 'natural wave' → wavy\n- 'bouncy', 'frizzy', 'ringlets', 'defined curls', 'spiral' → curly\n- 'tight curls', 'springy', 'kinky', 'afro-textured', 'slinky-like', 'coils' → coily"
+                    },
+                    "scalp_condition": {
+                        "type": "string",
+                        "enum": ["dry", "oily", "normal"],
+                        "description": "Normalize scalp descriptions to these categories. For example:\n- 'flaky', 'itchy', 'tight feeling', 'peeling', 'scaly' → dry\n- 'greasy', 'build-up', 'shiny', 'dirty fast', 'heavy roots', 'oily' → oily\n- 'balanced', 'healthy', 'fine', 'no issues mentioned', 'normal' → normal"
+                    },
+                    "length": {
+                        "type": "string",
+                        "enum": ["short", "medium", "long"],
+                        "description": "Map approximate or descriptive lengths to one of these categories:\n- 'pixie', 'ear length', 'chin length', 'above shoulders', 'short' → short\n- 'shoulder length', 'collarbone', 'bob', 'lob', 'kind of in between', 'mid-length' → medium\n- 'past shoulders', 'mid-back', 'waist length', 'long', 'below shoulders' → long"
+                    }
                 },
                 "required": []
             }
