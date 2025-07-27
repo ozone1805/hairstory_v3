@@ -6,7 +6,7 @@ python3 app.py
 
 TODO:
 
-- making sure the hair profile is being built consecutively and keeping all of the history
+- making sure the hair profile is being built consecutively and includes all of the chat history
 
 - don't recommend refills unless they specifically ask for them
 
