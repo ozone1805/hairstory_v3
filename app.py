@@ -73,14 +73,14 @@ def chat():
     conversation_history = data.get("conversation_history", [])
     user_profile = data.get("user_profile", {})
 
-    # Use function calling to extract as much of the profile as possible
-    extracted = build_profile_with_function_call(
-        [{"role": "system", "content": "You are a warm, friendly haircare assistant. You are building a hair profile for the user."}] + conversation_history
+    # Use function calling to extract as much of the profile as possible with full context
+    updated_profile = build_profile_with_function_call(
+        conversation_history, 
+        current_profile=user_profile
     )
-    for field, _ in profile_fields:
-        value = extracted.get(field, None)
-        if value:
-            user_profile[field] = value
+    
+    # Update the user profile with any new information
+    user_profile.update(updated_profile)
 
     # Fallback: try mapping for the last user input if still missing fields
     if conversation_history:
@@ -95,12 +95,20 @@ def chat():
         profile_text = profile_to_string(user_profile)
         similar_products = query_pinecone(profile_text, top_k=5)
         formatted_products = format_products_for_prompt(similar_products)
-        prompt = create_recommendation_prompt(profile_text, formatted_products)
-        # Call OpenAI to get the actual recommendation
+        
+        # Create recommendation prompt with full context
+        prompt = create_recommendation_prompt(
+            profile_text, 
+            formatted_products, 
+            conversation_history=conversation_history,
+            user_profile=user_profile
+        )
+        
+        # Call OpenAI to get the actual recommendation with full context
         openai_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a warm, knowledgeable haircare assistant for Hairstory. You help users find the perfect haircare routine based on their hair type and concerns."},
+                {"role": "system", "content": "You are a warm, knowledgeable haircare assistant for Hairstory. You help users find the perfect haircare routine based on their hair type and concerns. You have access to their complete conversation history and hair profile."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=500,
@@ -114,7 +122,7 @@ def chat():
         }
         return jsonify(response)
     else:
-        # Generate a conversational question for the next missing field
+        # Generate a conversational question for the next missing field with full context
         ai_question = generate_next_question(user_profile, conversation_history)
         response = {
             "profile": user_profile,

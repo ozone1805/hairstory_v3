@@ -116,8 +116,8 @@ def format_products_for_prompt(products):
         })
     return formatted_products
 
-def create_recommendation_prompt(user_input, products):
-    """Create a prompt for the OpenAI API with user input and relevant products."""
+def create_recommendation_prompt(user_input, products, conversation_history=None, user_profile=None):
+    """Create a prompt for the OpenAI API with user input, relevant products, and full conversation context."""
     
     products_text = ""
     for i, product in enumerate(products, 1):
@@ -129,21 +129,41 @@ def create_recommendation_prompt(user_input, products):
    - Relevance Score: {product['similarity_score']:.3f}
 """
     
+    # Build comprehensive context
+    context_parts = []
+    
+    if user_profile:
+        context_parts.append(f"USER'S HAIR PROFILE: {profile_to_string(user_profile)}")
+    
+    if conversation_history:
+        # Include key conversation points for context
+        conversation_summary = "CONVERSATION CONTEXT:\n"
+        for msg in conversation_history[-5:]:  # Last 5 messages for context
+            if msg["role"] == "user":
+                conversation_summary += f"- User: {msg['content']}\n"
+        context_parts.append(conversation_summary)
+    
+    context_parts.append(f"USER'S INPUT: {user_input}")
+    
+    context = "\n\n".join(context_parts)
+    
     prompt = f"""You are a warm, understanding haircare assistant for Hairstory. Your goal is to help users find the perfect haircare routine based on their needs.
 
-USER'S INPUT: {user_input}
+{context}
 
 RELEVANT HAIRSTORY PRODUCTS (ranked by relevance):
 {products_text}
 
 INSTRUCTIONS:
-1. Analyze the user's hair type, concerns, and needs from their input
-2. Recommend specific products from the list above that would work best for them
-3. Explain why these products are a good match for their hair type/concerns
-4. Be warm, supportive, and educational
-5. Only recommend products from the Hairstory catalog above
-6. Include the product URLs when recommending products
-7. If no products seem relevant, ask clarifying questions about their hair type and concerns
+1. Analyze the user's hair type, concerns, and needs from their input and conversation history
+2. Consider their complete hair profile when making recommendations
+3. Recommend specific products from the list above that would work best for them
+4. Explain why these products are a good match for their hair type/concerns
+5. Be warm, supportive, and educational
+6. Only recommend products from the Hairstory catalog above
+7. Include the product URLs when recommending products
+8. Reference specific details from the conversation to show you understand their needs
+9. If no products seem relevant, ask clarifying questions about their hair type and concerns
 
 Please provide a personalized recommendation:"""
 
@@ -152,40 +172,65 @@ Please provide a personalized recommendation:"""
 # Add a function to generate the next conversational question using OpenAI
 
 def generate_next_question(profile, conversation_history):
+    """Generate the next conversational question with full context including profile and chat history."""
     missing_fields = [field for field, _ in profile_fields if not profile.get(field)]
     if not missing_fields:
         return None
-    # Compose a prompt for the AI
+    
+    # Build a comprehensive context including the current profile and conversation history
     profile_summary = profile_to_string(profile)
     last_user_message = conversation_history[-1]["content"] if conversation_history else ""
-    profile_field_names = [field for field, _ in profile_fields]
-    fields_str = ", ".join(profile_field_names)
-    prompt = (
-        f"You are a warm, friendly haircare assistant. You are building a hair profile for the user. "
-        f"Here is the information you have so far: {profile_summary}. "
-        f"The last thing the user said was: '{last_user_message}'. "
-        f"Please ask a conversational, context-aware question to learn about the user's {missing_fields[0].replace('_', ' ')}. "
-        f"Only ask about these fields, one at a time: {fields_str}. "
-        f"Be friendly and natural."
-    )
+    
+    # Create a context-aware prompt that includes the full conversation history
+    context_messages = [
+        {"role": "system", "content": "You are a warm, friendly haircare assistant building a hair profile. You have access to the user's conversation history and current profile information."},
+    ]
+    
+    # Add conversation history for context
+    for msg in conversation_history:
+        context_messages.append(msg)
+    
+    # Add the current profile context
+    profile_context = f"Current hair profile information: {profile_summary}"
+    if missing_fields:
+        profile_context += f"\nStill need to learn about: {', '.join(missing_fields)}"
+    
+    context_messages.append({
+        "role": "user", 
+        "content": f"{profile_context}\n\nBased on our conversation so far, please ask a natural, context-aware question to learn about the user's {missing_fields[0].replace('_', ' ')}. Be conversational and reference what they've already told us."
+    })
+    
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a warm, friendly haircare assistant. You are building a hair profile for the user."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=100,
+        messages=context_messages,
+        max_tokens=150,
         temperature=0.7
     )
     ai_content = response.choices[0].message.content
     return ai_content.strip() if ai_content else ""
 
-def build_profile_with_function_call(conversation_history):
-    """Use OpenAI function calling to extract as much of the hair profile as possible from the conversation."""
+def build_profile_with_function_call(conversation_history, current_profile=None):
+    """Use OpenAI function calling to extract as much of the hair profile as possible from the conversation, maintaining existing profile data."""
+    if current_profile is None:
+        current_profile = {}
+    
+    # Create a comprehensive context that includes the current profile
+    profile_context = ""
+    if current_profile:
+        profile_context = f"\n\nCurrent profile information: {profile_to_string(current_profile)}"
+    
+    # Build messages with full context
+    messages = [
+        {"role": "system", "content": f"You are a warm, friendly haircare assistant building a hair profile. Extract and update the user's hair profile from the conversation, maintaining any existing information.{profile_context}"}
+    ]
+    
+    # Add the full conversation history
+    messages.extend(conversation_history)
+    
     function_schema = [
         {
             "name": "build_hair_profile",
-            "description": "Extract and normalize the user's hair profile from natural language, even if indirect, vague, or poetic. Always return the best matching value for each field, mapping descriptive terms to the closest structured option. If the user has already provided information in earlier messages, retain and merge it.",
+            "description": "Extract and normalize the user's hair profile from natural language, even if indirect, vague, or poetic. Always return the best matching value for each field, mapping descriptive terms to the closest structured option. If the user has already provided information in earlier messages, retain and merge it. Only update fields that are mentioned or can be inferred from the conversation.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -209,9 +254,10 @@ def build_profile_with_function_call(conversation_history):
             }
         }
     ]
+    
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages=conversation_history,
+        messages=messages,
         functions=function_schema,
         function_call={"name": "build_hair_profile"},
         max_tokens=300,
@@ -220,8 +266,13 @@ def build_profile_with_function_call(conversation_history):
     choice = response.choices[0]
     if choice.finish_reason == "function_call":
         args = json.loads(choice.message.function_call.arguments)
-        return args
-    return {}
+        # Merge with existing profile, only updating fields that have values
+        updated_profile = current_profile.copy()
+        for field, value in args.items():
+            if value:  # Only update if we have a value
+                updated_profile[field] = value
+        return updated_profile
+    return current_profile
 
 def chat_with_user():
     """Main chat function."""

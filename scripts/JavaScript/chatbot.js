@@ -64,13 +64,19 @@ document.addEventListener('DOMContentLoaded', function() {
             const res = await fetch('/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ conversation_history, user_profile })
+                body: JSON.stringify({ 
+                    conversation_history: conversation_history, 
+                    user_profile: user_profile 
+                })
             });
             if (!res.ok) {
                 throw new Error('Server error: ' + res.status);
             }
             const data = await res.json();
+            
+            // Update user profile with any new information
             user_profile = data.profile || user_profile;
+            
             let reply = '';
             if (data.recommendation) {
                 reply = data.recommendation;
@@ -81,6 +87,10 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 reply = 'Sorry, I did not understand.';
             }
+            
+            // Add assistant response to conversation history
+            conversation_history.push({ role: 'assistant', content: reply });
+            
             // Remove the typing indicator
             clearInterval(typingInterval);
             chat.removeChild(typingDiv);
