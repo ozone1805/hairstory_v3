@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Show initial welcome message
     appendMessage('bot', "🌟 Welcome to Hairstory Haircare Assistant! 🌟<br>Let's get to know your hair so I can help you find the perfect products.");
-    conversation_history.push({ role: 'assistant', content: "Welcome to Hairstory Haircare Assistant! Let's get to know your hair so I can help you find the perfect products." });
+    conversation_history.push({ role: 'assistant', content: "Tell us your hair story and we'll give you a customized product recommendation." });
 
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
