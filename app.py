@@ -40,6 +40,7 @@ def home():
             .msg em { font-style: italic; }
             .msg a { color: #1a73e8; text-decoration: underline; }
             .msg a:hover { color: #0d47a1; text-decoration: none; }
+            .typing-indicator .dots { display: inline-block; min-width: 20px; }
             #input-area { display: flex; }
             #user-input { flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
             #send-btn { padding: 8px 16px; border: none; background: #1a73e8; color: #fff; border-radius: 4px; margin-left: 8px; cursor: pointer; }

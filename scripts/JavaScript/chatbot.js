@@ -44,7 +44,22 @@ document.addEventListener('DOMContentLoaded', function() {
         userInput.value = '';
         userInput.disabled = true;
         sendBtn.disabled = true;
-        appendMessage('bot', '<i>Thinking...</i>');
+        
+        // Create typing indicator with animated dots
+        const typingDiv = document.createElement('div');
+        typingDiv.className = 'msg bot typing-indicator';
+        typingDiv.innerHTML = '<b>Assistant:</b> <span class="dots"></span>';
+        chat.appendChild(typingDiv);
+        chat.scrollTop = chat.scrollHeight;
+        
+        // Animate the dots
+        let dotCount = 0;
+        const dotsElement = typingDiv.querySelector('.dots');
+        const typingInterval = setInterval(() => {
+            dotCount = (dotCount + 1) % 4;
+            dotsElement.textContent = '.'.repeat(dotCount);
+        }, 500);
+        
         try {
             const res = await fetch('/chat', {
                 method: 'POST',
@@ -66,11 +81,13 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 reply = 'Sorry, I did not understand.';
             }
-            // Remove the 'Thinking...' message
-            chat.removeChild(chat.lastChild);
+            // Remove the typing indicator
+            clearInterval(typingInterval);
+            chat.removeChild(typingDiv);
             appendMessage('bot', reply);
         } catch (err) {
-            chat.removeChild(chat.lastChild);
+            clearInterval(typingInterval);
+            chat.removeChild(typingDiv);
             appendMessage('bot', 'Error: ' + err.message);
             console.error(err);
         }
