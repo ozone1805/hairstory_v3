@@ -29,9 +29,17 @@ def home():
             .container { max-width: 500px; margin: 40px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 24px; }
             h2 { text-align: center; color: #333; }
             #chat { height: 350px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; padding: 12px; background: #fafafa; margin-bottom: 16px; }
-            .msg { margin: 8px 0; }
+            .msg { margin: 8px 0; line-height: 1.5; }
             .user { color: #1a73e8; }
             .bot { color: #388e3c; }
+            .msg h3 { margin: 8px 0 4px 0; color: #333; font-size: 16px; }
+            .msg h4 { margin: 6px 0 3px 0; color: #333; font-size: 14px; }
+            .msg ul { margin: 4px 0; padding-left: 20px; }
+            .msg li { margin: 2px 0; }
+            .msg strong { font-weight: bold; }
+            .msg em { font-style: italic; }
+            .msg a { color: #1a73e8; text-decoration: underline; }
+            .msg a:hover { color: #0d47a1; text-decoration: none; }
             #input-area { display: flex; }
             #user-input { flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
             #send-btn { padding: 8px 16px; border: none; background: #1a73e8; color: #fff; border-radius: 4px; margin-left: 8px; cursor: pointer; }
@@ -47,76 +55,16 @@ def home():
                 <button id="send-btn" type="submit">Send</button>
             </form>
         </div>
-        <script>
-            document.addEventListener('DOMContentLoaded', function() {
-                const chat = document.getElementById('chat');
-                const form = document.getElementById('input-area');
-                const userInput = document.getElementById('user-input');
-                const sendBtn = document.getElementById('send-btn');
-                let conversation_history = [];
-                let user_profile = {};
-
-                function appendMessage(sender, text) {
-                    const div = document.createElement('div');
-                    div.className = 'msg ' + sender;
-                    div.innerHTML = `<b>${sender === 'user' ? 'You' : 'Assistant'}:</b> ` + text.replace(/\\n/g, '<br>');
-                    chat.appendChild(div);
-                    chat.scrollTop = chat.scrollHeight;
-                }
-
-                // Show initial welcome message
-                appendMessage('bot', "🌟 Welcome to Hairstory Haircare Assistant! 🌟<br>Let's get to know your hair so I can help you find the perfect products.");
-                conversation_history.push({ role: 'assistant', content: "Welcome to Hairstory Haircare Assistant! Let's get to know your hair so I can help you find the perfect products." });
-
-                form.addEventListener('submit', async function(e) {
-                    e.preventDefault();
-                    const text = userInput.value.trim();
-                    if (!text) return;
-                    appendMessage('user', text);
-                    conversation_history.push({ role: 'user', content: text });
-                    userInput.value = '';
-                    userInput.disabled = true;
-                    sendBtn.disabled = true;
-                    appendMessage('bot', '<i>Thinking...</i>');
-                    try {
-                        const res = await fetch('/chat', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ conversation_history, user_profile })
-                        });
-                        if (!res.ok) {
-                            throw new Error('Server error: ' + res.status);
-                        }
-                        const data = await res.json();
-                        user_profile = data.profile || user_profile;
-                        let reply = '';
-                        if (data.recommendation) {
-                            reply = data.recommendation;
-                        } else if (data.products && data.products.length > 0) {
-                            reply = "Here are some products you might like!";
-                        } else if (data.message) {
-                            reply = data.message;
-                        } else {
-                            reply = 'Sorry, I did not understand.';
-                        }
-                        // Remove the 'Thinking...' message
-                        chat.removeChild(chat.lastChild);
-                        appendMessage('bot', reply);
-                    } catch (err) {
-                        chat.removeChild(chat.lastChild);
-                        appendMessage('bot', 'Error: ' + err.message);
-                        console.error(err);
-                    }
-                    userInput.disabled = false;
-                    sendBtn.disabled = false;
-                    userInput.focus();
-                });
-            });
-        </script>
+        <script src="/static/chatbot.js"></script>
     </body>
     </html>
     '''
     return Response(html, mimetype='text/html')
+
+@app.route("/static/chatbot.js")
+def serve_chatbot_js():
+    with open('scripts/JavaScript/chatbot.js', 'r') as f:
+        return Response(f.read(), mimetype='application/javascript')
 
 @app.route("/chat", methods=["POST"])
 def chat():

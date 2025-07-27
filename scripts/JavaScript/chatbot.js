@@ -1,0 +1,81 @@
+document.addEventListener('DOMContentLoaded', function() {
+    const chat = document.getElementById('chat');
+    const form = document.getElementById('input-area');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    let conversation_history = [];
+    let user_profile = {};
+
+    function appendMessage(sender, text) {
+        const div = document.createElement('div');
+        div.className = 'msg ' + sender;
+        
+        // Format the text with proper line breaks and styling
+        let formattedText = text
+            .replace(/\\n/g, '<br>')  // Handle escaped newlines
+            .replace(/\n/g, '<br>')   // Handle actual newlines
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')  // Markdown links
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')  // Bold text
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')              // Italic text
+            .replace(/### (.*?)(?=<br>|$)/g, '<h3>$1</h3>')    // Headers
+            .replace(/## (.*?)(?=<br>|$)/g, '<h4>$1</h4>')     // Sub-headers
+            .replace(/### (.*?)(?=<br>|$)/g, '<h3>$1</h3>')    // Headers (again for nested)
+            .replace(/\*\* (.*?)(?=<br>|$)/g, '<li><strong>$1</strong></li>')  // Bold list items
+            .replace(/^\d+\.\s\*\*(.*?)\*\*/gm, '<li><strong>$1</strong></li>')  // Numbered bold items
+            .replace(/^\d+\.\s(.*?)(?=<br>|$)/gm, '<li>$1</li>')  // Numbered list items
+            .replace(/^\*\s(.*?)(?=<br>|$)/gm, '<li>$1</li>')     // Bullet list items
+            .replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>');         // Wrap lists in ul tags
+        
+        div.innerHTML = `<b>${sender === 'user' ? 'You' : 'Assistant'}:</b> ` + formattedText;
+        chat.appendChild(div);
+        chat.scrollTop = chat.scrollHeight;
+    }
+
+    // Show initial welcome message
+    appendMessage('bot', "🌟 Welcome to Hairstory Haircare Assistant! 🌟<br>Let's get to know your hair so I can help you find the perfect products.");
+    conversation_history.push({ role: 'assistant', content: "Welcome to Hairstory Haircare Assistant! Let's get to know your hair so I can help you find the perfect products." });
+
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const text = userInput.value.trim();
+        if (!text) return;
+        appendMessage('user', text);
+        conversation_history.push({ role: 'user', content: text });
+        userInput.value = '';
+        userInput.disabled = true;
+        sendBtn.disabled = true;
+        appendMessage('bot', '<i>Thinking...</i>');
+        try {
+            const res = await fetch('/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversation_history, user_profile })
+            });
+            if (!res.ok) {
+                throw new Error('Server error: ' + res.status);
+            }
+            const data = await res.json();
+            user_profile = data.profile || user_profile;
+            let reply = '';
+            if (data.recommendation) {
+                reply = data.recommendation;
+            } else if (data.products && data.products.length > 0) {
+                reply = "Here are some products you might like!";
+            } else if (data.message) {
+                reply = data.message;
+            } else {
+                reply = 'Sorry, I did not understand.';
+            }
+            // Remove the 'Thinking...' message
+            chat.removeChild(chat.lastChild);
+            appendMessage('bot', reply);
+        } catch (err) {
+            chat.removeChild(chat.lastChild);
+            appendMessage('bot', 'Error: ' + err.message);
+            console.error(err);
+        }
+        userInput.disabled = false;
+        sendBtn.disabled = false;
+        userInput.focus();
+    });
+}); 
