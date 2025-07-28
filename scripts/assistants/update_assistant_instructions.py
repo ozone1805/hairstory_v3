@@ -1,7 +1,13 @@
 import os
 import sys
+import logging
 from openai import OpenAI
 from dotenv import load_dotenv
+import json
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -29,11 +35,24 @@ except Exception as e:
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 try:
+    logger.info(f"🤖 API CALL - Assistants: Updating assistant {ASSISTANT_ID} with new instructions")
+    logger.info(f"📝 Instructions Length: {len(new_instructions)} characters")
+    
+    # Log the complete request payload
+    request_payload = {
+        "assistant_id": ASSISTANT_ID,
+        "instructions": new_instructions
+    }
+    logger.info(f"📦 ASSISTANT UPDATE REQUEST PAYLOAD: {json.dumps(request_payload, indent=2)}")
+    
     updated_assistant = client.beta.assistants.update(
         assistant_id=ASSISTANT_ID,
         instructions=new_instructions
     )
+    
+    logger.info(f"✅ API RESPONSE - Assistants: Successfully updated assistant {ASSISTANT_ID}")
     print(f"Successfully updated assistant instructions. Assistant ID: {ASSISTANT_ID}")
 except Exception as e:
+    logger.error(f"❌ API ERROR - Assistants: Failed to update assistant {ASSISTANT_ID}: {e}")
     print(f"Error updating assistant: {e}")
     sys.exit(1) 

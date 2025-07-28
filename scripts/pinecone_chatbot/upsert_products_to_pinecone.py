@@ -3,6 +3,11 @@ import json
 import openai
 from tqdm import tqdm
 from pinecone import Pinecone, ServerlessSpec
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
@@ -40,10 +45,22 @@ with open("data/all_products.json", "r") as f:
 # Helper: get embedding (new OpenAI API)
 EMBED_MODEL = "text-embedding-ada-002"
 def get_embedding(text):
+    logger.info(f"🔍 API CALL - Embeddings: Getting embedding for product text (length: {len(text)} chars)")
+    logger.info(f"📝 Product Text: {text[:200]}{'...' if len(text) > 200 else ''}")
+    
+    # Log the complete request payload
+    request_payload = {
+        "input": [text],
+        "model": EMBED_MODEL
+    }
+    logger.info(f"📦 UPSERT EMBEDDINGS REQUEST PAYLOAD: {json.dumps(request_payload, indent=2)}")
+    
     response = client.embeddings.create(
         input=[text],
         model=EMBED_MODEL
     )
+    
+    logger.info(f"✅ API RESPONSE - Embeddings: Successfully received embedding (dimensions: {len(response.data[0].embedding)})")
     return response.data[0].embedding
 
 # Prepare and upsert

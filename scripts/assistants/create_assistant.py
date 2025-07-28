@@ -3,6 +3,12 @@ import openai
 import requests
 import time
 import sys
+import logging
+import json
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Constants
 API_BASE_URL = "https://api.openai.com/v1"
@@ -32,11 +38,22 @@ def upload_file(api_key):
     print("Uploading file...")
     openai.api_key = api_key
     
+    logger.info(f"📁 API CALL - Files: Uploading file {FILE_PATH}")
+    
+    # Log the complete request payload
+    request_payload = {
+        "file": f"<file: {FILE_PATH}>",
+        "purpose": "assistants"
+    }
+    logger.info(f"📦 FILE UPLOAD REQUEST PAYLOAD: {json.dumps(request_payload, indent=2)}")
+    
     uploaded_file = openai.files.create(
         file=open(FILE_PATH, "rb"),
         purpose="assistants"
     )
+    
     file_id = uploaded_file.id
+    logger.info(f"✅ API RESPONSE - Files: Successfully uploaded file, ID: {file_id}")
     print(f"✅ Uploaded {FILE_PATH} — File ID: {file_id}")
     return file_id
 
@@ -133,18 +150,21 @@ def create_assistant(api_key, vector_store_id):
     print("Creating assistant...")
     openai.api_key = api_key
     
-    assistant = openai.beta.assistants.create(
-        name=ASSISTANT_NAME,
-        instructions="""You are a warm, understanding haircare assistant. Your goal is to get to know the user’s hair and lifestyle through a natural conversation.
-Be curious and kind — you’re not administering a quiz, you’re having a dialogue to help them feel heard and supported.
+    logger.info(f"🤖 API CALL - Assistants: Creating assistant '{ASSISTANT_NAME}' with vector store {vector_store_id}")
+    
+    # Log the complete request payload
+    request_payload = {
+        "name": ASSISTANT_NAME,
+        "instructions": """You are a warm, understanding haircare assistant. Your goal is to get to know the user's hair and lifestyle through a natural conversation.
+Be curious and kind — you're not administering a quiz, you're having a dialogue to help them feel heard and supported.
 I want to be very clear, you only recommend products from the uploaded hairstory product catalog, nothing else.
 When reffering to products, use the name field in the product catalog to recommend products. Use the url field to link to the product.
 When recommending products, only use products labeled singleton in the type field. If all products haoppen to be in a bundle, recommend the bundle.
 
-Ask questions organically, weaving them into the flow of conversation. Over time, you’ll want to learn things like:
+Ask questions organically, weaving them into the flow of conversation. Over time, you'll want to learn things like:
 - How they would describe their hair (texture, thickness, density)
 - What their hair type is (oily, dry, normal, combination, etc.)
-- Any concerns they have or things they’d like to change
+- Any concerns they have or things they'd like to change
 - What a good hair day feels like for them
 - How often they wash their hair
 - Whether they color treat it
@@ -152,7 +172,44 @@ Ask questions organically, weaving them into the flow of conversation. Over time
 - How long their hair is
 - How they typically style it and what products they use
 
-You don’t need to ask these all at once. Take your time and build trust, but don't ask too many questions at once or in general.
+You don't need to ask these all at once. Take your time and build trust, but don't ask too many questions at once or in general.
+Once you have enough information, recommend a personalized haircare routine using only items from the uploaded hairstory product catalog.
+This can include one or more product bundles suited to their hair type, concerns, and lifestyle.
+
+Always be thoughtful and never assume.
+Let the user guide the tone.
+Your goal is to help them feel confident in their routine."""
+,
+        "model": "gpt-4o-mini",
+        "tools": [{"type": "file_search"}],
+        "tool_resources": {
+            "file_search": {
+                "vector_store_ids": [vector_store_id]
+            }
+        }
+    }
+    logger.info(f"📦 ASSISTANT CREATE REQUEST PAYLOAD: {json.dumps(request_payload, indent=2)}")
+    
+    assistant = openai.beta.assistants.create(
+        name=ASSISTANT_NAME,
+        instructions="""You are a warm, understanding haircare assistant. Your goal is to get to know the user's hair and lifestyle through a natural conversation.
+Be curious and kind — you're not administering a quiz, you're having a dialogue to help them feel heard and supported.
+I want to be very clear, you only recommend products from the uploaded hairstory product catalog, nothing else.
+When reffering to products, use the name field in the product catalog to recommend products. Use the url field to link to the product.
+When recommending products, only use products labeled singleton in the type field. If all products haoppen to be in a bundle, recommend the bundle.
+
+Ask questions organically, weaving them into the flow of conversation. Over time, you'll want to learn things like:
+- How they would describe their hair (texture, thickness, density)
+- What their hair type is (oily, dry, normal, combination, etc.)
+- Any concerns they have or things they'd like to change
+- What a good hair day feels like for them
+- How often they wash their hair
+- Whether they color treat it
+- If they use shampoo and conditioner
+- How long their hair is
+- How they typically style it and what products they use
+
+You don't need to ask these all at once. Take your time and build trust, but don't ask too many questions at once or in general.
 Once you have enough information, recommend a personalized haircare routine using only items from the uploaded hairstory product catalog.
 This can include one or more product bundles suited to their hair type, concerns, and lifestyle.
 
@@ -168,7 +225,9 @@ Your goal is to help them feel confident in their routine."""
             }
         }
     )
+    
     assistant_id = assistant.id
+    logger.info(f"✅ API RESPONSE - Assistants: Successfully created assistant, ID: {assistant_id}")
     print(f"✅ Assistant created — ID: {assistant_id}")
     return assistant_id
 

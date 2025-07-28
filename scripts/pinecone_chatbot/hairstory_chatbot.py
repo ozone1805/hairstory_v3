@@ -4,6 +4,24 @@ from pinecone import Pinecone
 import json
 from typing import Optional, Dict
 from dotenv import load_dotenv
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Global debug mode flag
+DEBUG_MODE = True
+
+def set_debug_mode(enabled: bool):
+    """Set debug mode for logging."""
+    global DEBUG_MODE
+    DEBUG_MODE = enabled
+    if DEBUG_MODE:
+        logging.getLogger().setLevel(logging.INFO)
+    else:
+        logging.getLogger().setLevel(logging.WARNING)
+
 load_dotenv()
 
 # Load environment variables
@@ -83,10 +101,24 @@ def print_profile(profile):
 
 def get_embedding(text):
     """Get embedding for text using OpenAI."""
+    if DEBUG_MODE:
+        logger.info(f"🔍 API CALL - Embeddings: Getting embedding for text (length: {len(text)} chars)")
+        logger.info(f"📝 Embedding Text: {text[:200]}{'...' if len(text) > 200 else ''}")
+        
+        # Log the complete request payload
+        request_payload = {
+            "input": [text],
+            "model": "text-embedding-ada-002"
+        }
+        logger.info(f"📦 EMBEDDINGS REQUEST PAYLOAD: {json.dumps(request_payload, indent=2)}")
+    
     response = client.embeddings.create(
         input=[text],
         model="text-embedding-ada-002"
     )
+    
+    if DEBUG_MODE:
+        logger.info(f"✅ API RESPONSE - Embeddings: Successfully received embedding (dimensions: {len(response.data[0].embedding)})")
     return response.data[0].embedding
 
 def query_pinecone(user_input, top_k=5):
@@ -200,13 +232,29 @@ def generate_next_question(profile, conversation_history):
         "content": f"{profile_context}\n\nBased on our conversation so far, please ask a natural, context-aware question to learn about the user's {missing_fields[0].replace('_', ' ')}. Be conversational and reference what they've already told us."
     })
     
+    if DEBUG_MODE:
+        logger.info(f"🤖 API CALL - Chat Completions: Generating next question for field '{missing_fields[0]}'")
+        logger.info(f"📝 Question Generation Context: {len(context_messages)} messages, profile: {profile_summary}")
+        
+        # Log the complete request payload
+        request_payload = {
+            "model": "gpt-4o-mini",
+            "messages": context_messages,
+            "max_tokens": 150,
+            "temperature": 0.7
+        }
+        logger.info(f"📦 CHAT COMPLETIONS REQUEST PAYLOAD: {json.dumps(request_payload, indent=2)}")
+    
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=context_messages,
         max_tokens=150,
         temperature=0.7
     )
+    
     ai_content = response.choices[0].message.content
+    if DEBUG_MODE:
+        logger.info(f"✅ API RESPONSE - Chat Completions: Generated question: {ai_content[:100]}{'...' if len(ai_content) > 100 else ''}")
     return ai_content.strip() if ai_content else ""
 
 def build_profile_with_function_call(conversation_history, current_profile=None):
@@ -255,6 +303,21 @@ def build_profile_with_function_call(conversation_history, current_profile=None)
         }
     ]
     
+    if DEBUG_MODE:
+        logger.info(f"🔍 API CALL - Chat Completions: Building hair profile with function calling")
+        logger.info(f"📝 Profile Building Context: {len(messages)} messages, current profile: {profile_to_string(current_profile)}")
+        
+        # Log the complete request payload
+        request_payload = {
+            "model": "gpt-4o",
+            "messages": messages,
+            "functions": function_schema,
+            "function_call": {"name": "build_hair_profile"},
+            "max_tokens": 300,
+            "temperature": 0
+        }
+        logger.info(f"📦 FUNCTION CALL REQUEST PAYLOAD: {json.dumps(request_payload, indent=2)}")
+    
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=messages,
@@ -263,15 +326,21 @@ def build_profile_with_function_call(conversation_history, current_profile=None)
         max_tokens=300,
         temperature=0
     )
+    
     choice = response.choices[0]
     if choice.finish_reason == "function_call":
         args = json.loads(choice.message.function_call.arguments)
+        if DEBUG_MODE:
+            logger.info(f"✅ API RESPONSE - Chat Completions: Function call successful, extracted profile: {args}")
         # Merge with existing profile, only updating fields that have values
         updated_profile = current_profile.copy()
         for field, value in args.items():
             if value:  # Only update if we have a value
                 updated_profile[field] = value
         return updated_profile
+    
+    if DEBUG_MODE:
+        logger.info(f"⚠️ API RESPONSE - Chat Completions: No function call made, finish reason: {choice.finish_reason}")
     return current_profile
 
 def chat_with_user():
@@ -331,6 +400,22 @@ def chat_with_user():
                 prompt = create_recommendation_prompt(profile_text, formatted_products)
                 print_profile(user_profile)
                 print("💭 Generating personalized recommendation...")
+                
+                logger.info(f"🤖 API CALL - Chat Completions: Generating personalized recommendation")
+                logger.info(f"📝 Recommendation Context: Profile: {profile_text}, Products: {len(formatted_products)} items")
+                
+                # Log the complete request payload
+                request_payload = {
+                    "model": "gpt-4o-mini",
+                    "messages": [
+                        {"role": "system", "content": "You are a warm, knowledgeable haircare assistant for Hairstory. You help users find the perfect haircare routine based on their hair type and concerns."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "max_tokens": 500,
+                    "temperature": 0.7
+                }
+                logger.info(f"📦 RECOMMENDATION REQUEST PAYLOAD: {json.dumps(request_payload, indent=2)}")
+                
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
@@ -340,7 +425,10 @@ def chat_with_user():
                     max_tokens=500,
                     temperature=0.7
                 )
+                
                 recommendation = response.choices[0].message.content
+                logger.info(f"✅ API RESPONSE - Chat Completions: Generated recommendation (length: {len(recommendation)} chars)")
+                
                 print("\n💡 Hairstory Assistant:")
                 print(recommendation)
                 print("\n" + "="*50 + "\n")
@@ -370,6 +458,22 @@ def chat_with_user():
                             f"{i+1}. {p['name']} - {p['subtitle']} (Type: {p['type']}, URL: {p['url']})" for i, p in enumerate(formatted_products)
                         ])
                         question_prompt = f"The user asked: '{next_action}'. Here are the relevant products you just recommended:\n{products_context}\n\nPlease answer the user's question using only the information above. If the answer is not clear from the product info, say so politely."
+                        
+                        logger.info(f"🤖 API CALL - Chat Completions: Answering follow-up question")
+                        logger.info(f"📝 Follow-up Question: {next_action}")
+                        
+                        # Log the complete request payload
+                        request_payload = {
+                            "model": "gpt-4o-mini",
+                            "messages": [
+                                {"role": "system", "content": "You are a warm, knowledgeable haircare assistant for Hairstory. Answer user questions about the recommended products using only the provided product information."},
+                                {"role": "user", "content": question_prompt}
+                            ],
+                            "max_tokens": 300,
+                            "temperature": 0.7
+                        }
+                        logger.info(f"📦 FOLLOW-UP REQUEST PAYLOAD: {json.dumps(request_payload, indent=2)}")
+                        
                         followup_response = client.chat.completions.create(
                             model="gpt-4o-mini",
                             messages=[
@@ -379,7 +483,10 @@ def chat_with_user():
                             max_tokens=300,
                             temperature=0.7
                         )
+                        
                         answer = followup_response.choices[0].message.content
+                        logger.info(f"✅ API RESPONSE - Chat Completions: Generated follow-up answer (length: {len(answer)} chars)")
+                        
                         print("\n💡 Hairstory Assistant:")
                         print(answer)
                         print("\n" + "="*50 + "\n")

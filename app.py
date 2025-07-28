@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify, Response
 import os
+import logging
+import json
 from scripts.pinecone_chatbot.hairstory_chatbot import (
     build_profile_with_function_call,
     query_pinecone,
@@ -10,8 +12,23 @@ from scripts.pinecone_chatbot.hairstory_chatbot import (
     profile_fields,
     generate_next_question,
     map_user_input_to_field_value,
-    client
+    client,
+    set_debug_mode
 )
+
+# Debug mode configuration
+DEBUG_MODE = False  # Set to False to disable detailed API logging
+
+# Set debug mode in the chatbot module
+set_debug_mode(DEBUG_MODE)
+
+# Set up logging based on debug mode
+if DEBUG_MODE:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+else:
+    logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
+
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -73,6 +90,9 @@ def chat():
     conversation_history = data.get("conversation_history", [])
     user_profile = data.get("user_profile", {})
 
+    if DEBUG_MODE:
+        logger.info(f"🔄 CHAT REQUEST: Received chat request with {len(conversation_history)} messages in history")
+
     # Use function calling to extract as much of the profile as possible with full context
     updated_profile = build_profile_with_function_call(
         conversation_history, 
@@ -104,6 +124,22 @@ def chat():
             user_profile=user_profile
         )
         
+        if DEBUG_MODE:
+            logger.info(f"🤖 API CALL - Chat Completions: Generating recommendation for complete profile")
+            logger.info(f"📝 Recommendation Context: Profile: {profile_text}, Products: {len(formatted_products)} items")
+            
+            # Log the complete request payload
+            request_payload = {
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": "You are a warm, knowledgeable haircare assistant for Hairstory. You help users find the perfect haircare routine based on their hair type and concerns. You have access to their complete conversation history and hair profile."},
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": 500,
+                "temperature": 0.7
+            }
+            logger.info(f"📦 WEB APP RECOMMENDATION REQUEST PAYLOAD: {json.dumps(request_payload, indent=2)}")
+        
         # Call OpenAI to get the actual recommendation with full context
         openai_response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -114,7 +150,11 @@ def chat():
             max_tokens=500,
             temperature=0.7
         )
+        
         recommendation = openai_response.choices[0].message.content
+        if DEBUG_MODE:
+            logger.info(f"✅ API RESPONSE - Chat Completions: Generated recommendation (length: {len(recommendation)} chars)")
+        
         response = {
             "profile": user_profile,
             "products": formatted_products,
