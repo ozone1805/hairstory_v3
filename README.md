@@ -18,3 +18,7 @@ TODO:
 - Ensure proper bundle logic
 
 - Add reviews
+
+- Possibly include chat history in the pinecone embeddings
+
+- update upsert_products to decide very specifically what is embedded and what is stored in metadata
