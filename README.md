@@ -6,6 +6,8 @@ python3 app.py
 
 TODO:
 
+- images
+
 - don't recommend refills unless they specifically ask for them
 
 - Handle a greater degree of indirect language (e.g. "slinky-like").
