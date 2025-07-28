@@ -2,10 +2,12 @@ from flask import Flask, request, jsonify, Response
 import os
 import logging
 import json
-from scripts.pinecone_chatbot.hairstory_chatbot import (
-    build_profile_with_function_call,
+from scripts.hybrid_chatbot import (
+    load_products_data,
+    create_product_catalog_summary,
     query_pinecone,
     format_products_for_prompt,
+    create_system_instructions,
     create_recommendation_prompt,
     profile_to_string,
     is_profile_complete,
@@ -32,6 +34,18 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Load products data and create catalog summary once at startup
+try:
+    products = load_products_data()
+    catalog_summary = create_product_catalog_summary(products)
+    system_instructions = create_system_instructions(catalog_summary)
+    logger.info(f"✅ Loaded {len(products)} products and created catalog summary")
+except Exception as e:
+    logger.error(f"❌ Error loading products data: {e}")
+    products = []
+    catalog_summary = "Error loading product catalog"
+    system_instructions = "You are a haircare assistant. Please inform the user that there was an error loading the product catalog."
+
 @app.route("/")
 def home():
     html = '''
@@ -40,11 +54,12 @@ def home():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Hairstory Haircare Assistant</title>
+        <title>Hairstory Haircare Assistant (Hybrid)</title>
         <style>
             body { font-family: Arial, sans-serif; background: #f7f7f7; margin: 0; padding: 0; }
             .container { max-width: 500px; margin: 40px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 24px; }
             h2 { text-align: center; color: #333; }
+            .subtitle { text-align: center; color: #666; font-size: 14px; margin-bottom: 20px; }
             #chat { height: 350px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; padding: 12px; background: #fafafa; margin-bottom: 16px; }
             .msg { margin: 8px 0; line-height: 1.5; }
             .user { color: #1a73e8; }
@@ -67,6 +82,7 @@ def home():
     <body>
         <div class="container">
             <h2>Hairstory Haircare Assistant</h2>
+            <div class="subtitle">Powered by Hybrid AI: Semantic Search + Product Knowledge</div>
             <div id="chat"></div>
             <form id="input-area" autocomplete="off">
                 <input id="user-input" autocomplete="off" placeholder="Type your message..." required />
@@ -93,80 +109,69 @@ def chat():
     if DEBUG_MODE:
         logger.info(f"🔄 CHAT REQUEST: Received chat request with {len(conversation_history)} messages in history")
 
-    # Use function calling to extract as much of the profile as possible with full context
-    updated_profile = build_profile_with_function_call(
-        conversation_history, 
-        current_profile=user_profile
-    )
-    
-    # Update the user profile with any new information
-    user_profile.update(updated_profile)
-
-    # Fallback: try mapping for the last user input if still missing fields
+    # Update profile if we can extract information from the last message
     if conversation_history:
         last_user_message = conversation_history[-1]["content"]
-        missing_fields = [field for field, _ in profile_fields if not user_profile.get(field)]
-        for field in missing_fields:
-            mapped = map_user_input_to_field_value(field, last_user_message)
-            if mapped:
-                user_profile[field] = mapped
+        for field, _ in profile_fields:
+            if not user_profile.get(field):
+                value = map_user_input_to_field_value(field, last_user_message)
+                if value:
+                    user_profile[field] = value
+                    if DEBUG_MODE:
+                        logger.info(f"✅ Updated profile: {field} = {value}")
 
     if is_profile_complete(user_profile):
+        # Use hybrid approach: Pinecone semantic search + catalog context
         profile_text = profile_to_string(user_profile)
-        similar_products = query_pinecone(profile_text, top_k=5)
-        formatted_products = format_products_for_prompt(similar_products)
         
-        # Create recommendation prompt with full context
-        prompt = create_recommendation_prompt(
+        # Query Pinecone for semantically relevant products
+        pinecone_results = query_pinecone(profile_text, top_k=5)
+        relevant_products = format_products_for_prompt(pinecone_results)
+        
+        if DEBUG_MODE:
+            logger.info(f"🔍 PINECONE QUERY: Retrieved {len(relevant_products)} relevant products")
+            for i, product in enumerate(relevant_products, 1):
+                logger.info(f"   {i}. {product['name']} (Score: {product['similarity_score']:.3f})")
+        
+        # Create recommendation prompt with hybrid context
+        recommendation_prompt = create_recommendation_prompt(
             profile_text, 
-            formatted_products, 
+            relevant_products, 
             conversation_history=conversation_history,
             user_profile=user_profile
         )
         
         if DEBUG_MODE:
-            logger.info(f"🤖 API CALL - Chat Completions: Generating recommendation for complete profile")
-            logger.info(f"📝 Recommendation Context: Profile: {profile_text}, Products: {len(formatted_products)} items")
-            
-            # Log the complete request payload
-            request_payload = {
-                "model": "gpt-4o-mini",
-                "messages": [
-                    {"role": "system", "content": "You are a warm, knowledgeable haircare assistant for Hairstory. You help users find the perfect haircare routine based on their hair type and concerns. You have access to their complete conversation history and hair profile."},
-                    {"role": "user", "content": prompt}
-                ],
-                "max_tokens": 500,
-                "temperature": 0.7
-            }
-            logger.info(f"📦 WEB APP RECOMMENDATION REQUEST PAYLOAD: {json.dumps(request_payload, indent=2)}")
+            logger.info(f"🤖 API CALL - Chat Completions: Generating hybrid recommendation")
+            logger.info(f"📝 Hybrid Context: Profile: {profile_text}, Products: {len(relevant_products)} items, Catalog Summary: {len(catalog_summary)} chars")
         
-        # Call OpenAI to get the actual recommendation with full context
+        # Call OpenAI with hybrid approach (system instructions + semantic results)
         openai_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a warm, knowledgeable haircare assistant for Hairstory. You help users find the perfect haircare routine based on their hair type and concerns. You have access to their complete conversation history and hair profile."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": system_instructions},
+                {"role": "user", "content": recommendation_prompt}
             ],
-            max_tokens=500,
+            max_tokens=800,
             temperature=0.7
         )
         
         recommendation = openai_response.choices[0].message.content
         if DEBUG_MODE:
-            logger.info(f"✅ API RESPONSE - Chat Completions: Generated recommendation (length: {len(recommendation)} chars)")
+            logger.info(f"✅ API RESPONSE - Chat Completions: Generated hybrid recommendation (length: {len(recommendation)} chars)")
         
         response = {
             "profile": user_profile,
-            "products": formatted_products,
+            "products": relevant_products,
             "recommendation": recommendation
         }
         return jsonify(response)
     else:
-        # Generate a conversational question for the next missing field with full context
+        # Generate a conversational question for the next missing field
         ai_question = generate_next_question(user_profile, conversation_history)
         response = {
             "profile": user_profile,
-            "message": ai_question or "Profile incomplete. Please provide more information."
+            "message": ai_question or "Profile incomplete. Please provide more information about your hair type, scalp condition, and hair length."
         }
         return jsonify(response)
 
