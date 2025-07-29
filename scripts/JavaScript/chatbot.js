@@ -32,8 +32,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Show initial welcome message
-    appendMessage('bot', "Tell us your hair story and we'll give you a customized product recommendation.");
-    conversation_history.push({ role: 'assistant', content: "Tell us your hair story and we'll give you a customized product recommendation." });
+    appendMessage('bot', "Hi! I'd love to help you find the perfect haircare products. Tell me a bit about your hair - what's your hair story?");
+    conversation_history.push({ role: 'assistant', content: "Hi! I'd love to help you find the perfect haircare products. Tell me a bit about your hair - what's your hair story?" });
 
     form.addEventListener('submit', async function(e) {
         e.preventDefault();

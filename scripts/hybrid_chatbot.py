@@ -197,7 +197,7 @@ INSTRUCTIONS:
 IMPORTANT: Always base your recommendations on the actual product data provided above. Do not make up or reference products that are not in this catalog."""
 
 def create_recommendation_prompt(user_input: str, products: List[Dict], conversation_history: List[Dict] = None, user_profile: Dict = None) -> str:
-    """Create a prompt for the OpenAI API with user input, relevant products, and full conversation context."""
+    """Create a prompt for generating personalized product recommendations."""
     
     # Format the retrieved products with full details
     products_text = ""
@@ -246,7 +246,21 @@ def create_recommendation_prompt(user_input: str, products: List[Dict], conversa
 SEMANTICALLY RELEVANT PRODUCTS (ranked by similarity):
 {products_text}
 
-Please provide a personalized recommendation:"""
+INSTRUCTIONS:
+1. Analyze the user's hair type, concerns, and needs from their input and conversation history
+2. Consider their complete hair profile when making recommendations
+3. Recommend specific products from the list above that would work best for them
+4. Explain why these products are a good match for their hair type/concerns
+5. Be warm, supportive, and educational
+6. Only recommend products from the Hairstory catalog above
+7. Include the product URLs when recommending products
+8. Reference specific details from the conversation to show you understand their needs
+9. If no products seem relevant, ask clarifying questions about their hair type and concerns
+10. Make your response feel conversational and natural, not like a product catalog
+11. Acknowledge their hair journey and be encouraging about their goals
+12. Use their exact words when referencing what they've told you about their hair
+
+Please provide a personalized recommendation that feels like a friendly conversation with a haircare expert:"""
 
 def generate_next_question(profile: Dict, conversation_history: List[Dict]) -> Optional[str]:
     """Generate the next conversational question to complete the user profile."""
@@ -258,13 +272,22 @@ def generate_next_question(profile: Dict, conversation_history: List[Dict]) -> O
     profile_summary = profile_to_string(profile)
     last_user_message = conversation_history[-1]["content"] if conversation_history else ""
     
-    prompt = f"""You are a warm, friendly haircare assistant building a hair profile. 
+    prompt = f"""You are a warm, friendly haircare assistant building a hair profile through natural conversation.
+
+IMPORTANT GUIDELINES:
+1. Acknowledge what the user has already shared before asking new questions
+2. Ask only ONE question at a time - don't overwhelm them
+3. Make questions feel conversational, not like a form
+4. Reference their previous answers to show you're listening
+5. If they've shared multiple pieces of information, acknowledge them first
+6. Be encouraging and supportive about their hair journey
+7. Use their exact words when referencing what they've told you
 
 Current Profile: {profile_summary}
 Last User Message: {last_user_message}
 Missing Fields: {', '.join(missing_fields)}
 
-Generate a natural, conversational question to learn about one of the missing fields. Choose the most relevant field based on the conversation context. Be warm and specific.
+Based on our conversation so far, please ask a natural, context-aware question to learn about the user's {missing_fields[0].replace('_', ' ')}. First acknowledge what they've already shared, then ask your question in a conversational way.
 
 Question:"""
     
@@ -272,8 +295,8 @@ Question:"""
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=100,
-            temperature=0.7
+            max_tokens=200,
+            temperature=0.8
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -284,8 +307,9 @@ Question:"""
 
 def chat_with_user():
     """Main chat function."""
-    print("🌟 Welcome to Hairstory Haircare Assistant (Hybrid Approach)!")
-    print("I'm here to help you find the perfect haircare routine. Let's start by learning about your hair.")
+    print("🌟 Welcome to Hairstory Haircare Assistant!")
+    print("I'm here to help you find the perfect haircare routine for your unique hair.")
+    print("Let's start by getting to know your hair a little better - no pressure, just a friendly chat!")
     print("Type 'quit' to exit at any time.\n")
     
     # Load products data for catalog summary
@@ -303,13 +327,18 @@ def chat_with_user():
         "content": system_instructions
     })
     
+    # Add a warm initial message to set the tone
+    initial_message = "Hi! I'd love to help you find the perfect haircare products. Tell me a bit about your hair - what's your hair story?"
+    print(f"💬 {initial_message}")
+    conversation_history.append({"role": "assistant", "content": initial_message})
+    
     while True:
         try:
             # Get user input
             user_input = input("You: ").strip()
             
             if user_input.lower() in ['quit', 'exit', 'bye']:
-                print("\n👋 Thank you for chatting with me! Have a great hair day!")
+                print("\n👋 Thank you for sharing your hair story with me! Have a wonderful day!")
                 break
             
             if not user_input:
@@ -331,7 +360,8 @@ def chat_with_user():
             if not is_profile_complete(user_profile):
                 next_question = generate_next_question(user_profile, conversation_history)
                 if next_question:
-                    print(f"\n🤔 {next_question}")
+                    print(f"\n💬 {next_question}")
+                    conversation_history.append({"role": "assistant", "content": next_question})
                     continue
             
             # Query Pinecone for relevant products
@@ -361,7 +391,7 @@ def chat_with_user():
             conversation_history.append({"role": "assistant", "content": assistant_response})
             
             # Print response
-            print(f"\n💬 {assistant_response}\n")
+            print(f"\n💡 {assistant_response}\n")
             
             # Show current profile
             if DEBUG_MODE:
