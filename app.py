@@ -14,6 +14,8 @@ from scripts.hybrid_chatbot import (
     profile_fields,
     generate_next_question,
     map_user_input_to_field_value,
+    generate_conversational_response,
+    extract_hair_profile_from_conversation,
     client,
     set_debug_mode
 )
@@ -109,20 +111,24 @@ def chat():
     if DEBUG_MODE:
         logger.info(f"🔄 CHAT REQUEST: Received chat request with {len(conversation_history)} messages in history")
 
-    # Update profile if we can extract information from the last message
+    # Extract hair profile information from the conversation using LLM
     if conversation_history:
-        last_user_message = conversation_history[-1]["content"]
-        for field, _ in profile_fields:
-            if not user_profile.get(field):
-                value = map_user_input_to_field_value(field, last_user_message)
-                if value:
-                    user_profile[field] = value
-                    if DEBUG_MODE:
-                        logger.info(f"✅ Updated profile: {field} = {value}")
+        extracted_profile = extract_hair_profile_from_conversation(conversation_history)
+        if extracted_profile:
+            user_profile.update(extracted_profile)
+            if DEBUG_MODE:
+                logger.info(f"✅ Updated profile from conversation: {extracted_profile}")
 
-    if is_profile_complete(user_profile):
-        # Use hybrid approach: Pinecone semantic search + catalog context
-        profile_text = profile_to_string(user_profile)
+    # Check if user is asking for recommendations
+    last_user_message = conversation_history[-1]["content"] if conversation_history else ""
+    is_asking_for_recommendations = any(
+        keyword in last_user_message.lower() for keyword in 
+        ['recommend', 'suggest', 'help', 'routine', 'products', 'what should', 'need', 'give me']
+    )
+
+    if is_asking_for_recommendations and len(conversation_history) >= 3:
+        # User is asking for recommendations and we have enough conversation history
+        profile_text = profile_to_string(user_profile) if user_profile else "Based on our conversation"
         
         # Query Pinecone for semantically relevant products
         pinecone_results = query_pinecone(profile_text, top_k=5)
@@ -167,11 +173,11 @@ def chat():
         }
         return jsonify(response)
     else:
-        # Generate a conversational question for the next missing field
-        ai_question = generate_next_question(user_profile, conversation_history)
+        # Continue the conversational flow
+        conversational_response = generate_conversational_response(last_user_message, conversation_history, user_profile)
         response = {
             "profile": user_profile,
-            "message": ai_question or "Profile incomplete. Please provide more information about your hair type, scalp condition, and hair length."
+            "message": conversational_response
         }
         return jsonify(response)
 

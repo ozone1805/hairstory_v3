@@ -128,6 +128,209 @@ profile_fields = [
     ("length", "How long is your hair? (short, medium, long)")
 ]
 
+# Enhanced hair profile system with comprehensive questions
+HAIR_PROFILE_QUESTIONS = [
+    "Describe your hair texture",
+    "What's your hair thickness? (fine, medium, thick)",
+    "What are your main hair concerns?",
+    "How do you typically style your hair?",
+    "What's your desired outcome or hair goals?",
+    "How do you cleanse your hair?",
+    "Do you have any scalp issues?",
+    "How often do you wash your hair?",
+    "Is your hair color treated?",
+    "Is your hair chemically treated?",
+    "Do you use extensions?",
+    "What's your current hair length?",
+    "How would you describe your hair type? (straight, wavy, curly, coily)",
+    "What's your scalp condition? (dry, oily, normal, combination)",
+    "What products do you currently use?",
+    "What's a good hair day like for you?",
+    "What's your hair density? (thin, medium, thick)",
+    "Do you have any allergies or sensitivities?",
+    "What's your lifestyle like? (active, low-maintenance, etc.)",
+    "What's your climate/environment like?"
+]
+
+def create_conversational_hair_profile_system() -> str:
+    """Create a comprehensive system prompt for conversational hair profiling."""
+    return """You are a warm, understanding haircare assistant conducting a natural conversation to understand someone's hair and lifestyle.
+
+CONVERSATION GUIDELINES:
+- Be genuinely curious and kind - you're having a dialogue, not administering a quiz
+- Acknowledge what they share before asking new questions
+- Ask follow-up questions based on their responses
+- Don't ask too many questions at once - let the conversation flow naturally
+- Reference their exact words to show you're listening
+- Be encouraging about their hair journey
+- Adapt your questions based on what they've already shared
+
+HAIR PROFILE AREAS TO EXPLORE (ask these organically, not all at once):
+1. Hair Texture & Type: How would they describe their hair texture and type?
+2. Thickness & Density: Fine, medium, or thick hair?
+3. Concerns & Goals: What issues do they want to address? What are their hair goals?
+4. Styling Habits: How do they typically style their hair?
+5. Cleansing Routine: How often do they wash? What's their current routine?
+6. Scalp Health: Any scalp issues or concerns?
+7. Chemical Treatments: Color, relaxers, perms, etc.
+8. Extensions: Do they use or want extensions?
+9. Current Products: What are they using now?
+10. Lifestyle Factors: Activity level, climate, maintenance preferences
+11. Sensitivities: Any allergies or reactions to products?
+
+CONVERSATION FLOW:
+- Start with open-ended questions about their hair story
+- Ask follow-up questions based on their responses
+- If they mention specific concerns, dive deeper into those
+- If they share multiple things, acknowledge each before moving on
+- Keep the tone warm and supportive
+- Don't rush to recommendations until you have a good understanding
+
+Remember: You're building trust and understanding, not just collecting data points."""
+
+def generate_conversational_response(user_input: str, conversation_history: List[Dict], user_profile: Dict = None) -> str:
+    """
+    Generate a conversational response using the LLM that can either:
+    1. Ask follow-up questions to learn more about their hair
+    2. Provide recommendations if enough information is gathered
+    3. Continue the natural conversation flow
+    """
+    if user_profile is None:
+        user_profile = {}
+    
+    # Create a summary of what we know so far
+    profile_summary = ""
+    if user_profile:
+        profile_summary = f"\nWhat we know so far: {profile_to_string(user_profile)}"
+    
+    # Determine if we have enough information for recommendations
+    has_sufficient_info = len(conversation_history) >= 3 and any(
+        keyword in user_input.lower() for keyword in 
+        ['recommend', 'suggest', 'help', 'routine', 'products', 'what should', 'need']
+    )
+    
+    # Create the conversation context
+    conversation_context = ""
+    if conversation_history:
+        # Include last few messages for context
+        recent_messages = conversation_history[-4:]  # Last 4 messages
+        conversation_context = "\nRecent conversation:\n"
+        for msg in recent_messages:
+            role = "User" if msg["role"] == "user" else "Assistant"
+            conversation_context += f"{role}: {msg['content']}\n"
+    
+    system_prompt = create_conversational_hair_profile_system()
+    
+    if has_sufficient_info:
+        # We have enough info and user is asking for recommendations
+        prompt = f"""{system_prompt}
+
+{conversation_context}{profile_summary}
+
+The user seems ready for product recommendations. Based on our conversation, provide:
+1. Acknowledge what you've learned about their hair
+2. Ask if they'd like specific product recommendations
+3. If yes, ask them to wait while you prepare personalized suggestions
+
+Response:"""
+    else:
+        # Continue the conversation to learn more
+        prompt = f"""{system_prompt}
+
+{conversation_context}{profile_summary}
+
+The user just said: "{user_input}"
+
+Respond naturally to what they shared. You can:
+- Acknowledge what they told you
+- Ask follow-up questions to learn more about their hair
+- Show understanding and empathy
+- Keep the conversation flowing naturally
+
+Don't ask too many questions at once. Focus on what they just shared and maybe ask one thoughtful follow-up question.
+
+Response:"""
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=300,
+            temperature=0.8
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"❌ Error generating conversational response: {e}")
+        return "I'd love to learn more about your hair! Could you tell me a bit about your hair texture and what concerns you have?"
+
+def extract_hair_profile_from_conversation(conversation_history: List[Dict]) -> Dict:
+    """
+    Extract hair profile information from the conversation history using the LLM.
+    This is more flexible than rigid field mapping.
+    """
+    if not conversation_history:
+        return {}
+    
+    # Create a summary of the conversation
+    conversation_text = ""
+    for msg in conversation_history:
+        if msg["role"] == "user":
+            conversation_text += f"User: {msg['content']}\n"
+    
+    prompt = f"""Based on this conversation, extract key information about the person's hair profile. 
+Return a JSON object with the following structure (only include fields that were mentioned):
+
+{{
+    "hair_type": "straight/wavy/curly/coily",
+    "hair_texture": "fine/medium/thick",
+    "hair_density": "thin/medium/thick", 
+    "scalp_condition": "dry/oily/normal/combination",
+    "hair_length": "short/medium/long",
+    "wash_frequency": "daily/every_other_day/weekly/etc",
+    "concerns": ["list", "of", "concerns"],
+    "current_products": ["list", "of", "products"],
+    "chemical_treatments": ["color", "relaxer", "perm", "etc"],
+    "styling_habits": "description",
+    "lifestyle": "description",
+    "goals": "description"
+}}
+
+Conversation:
+{conversation_text}
+
+JSON:"""
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500,
+            temperature=0.3
+        )
+        
+        # Parse the JSON response
+        import json
+        profile_text = response.choices[0].message.content.strip()
+        
+        # Try to extract JSON from the response
+        if "{" in profile_text and "}" in profile_text:
+            start = profile_text.find("{")
+            end = profile_text.rfind("}") + 1
+            json_str = profile_text[start:end]
+            
+            try:
+                profile = json.loads(json_str)
+                return profile
+            except json.JSONDecodeError:
+                logger.error(f"❌ Error parsing JSON from LLM response: {json_str}")
+                return {}
+        else:
+            return {}
+            
+    except Exception as e:
+        logger.error(f"❌ Error extracting hair profile: {e}")
+        return {}
+
 def map_user_input_to_field_value(field, user_input):
     """Map natural language user input to valid field values."""
     text = user_input.strip().lower()
@@ -306,7 +509,7 @@ Question:"""
         return question
 
 def chat_with_user():
-    """Main chat function."""
+    """Main chat function using conversational hair profiling."""
     print("🌟 Welcome to Hairstory Haircare Assistant!")
     print("I'm here to help you find the perfect haircare routine for your unique hair.")
     print("Let's start by getting to know your hair a little better - no pressure, just a friendly chat!")
@@ -347,22 +550,17 @@ def chat_with_user():
             # Add user message to history
             conversation_history.append({"role": "user", "content": user_input})
             
-            # Update profile if we can extract information
-            for field, _ in profile_fields:
-                if not user_profile.get(field):
-                    value = map_user_input_to_field_value(field, user_input)
-                    if value:
-                        user_profile[field] = value
-                        if DEBUG_MODE:
-                            logger.info(f"✅ Updated profile: {field} = {value}")
+            # Extract hair profile information from the conversation
+            extracted_profile = extract_hair_profile_from_conversation(conversation_history)
+            if extracted_profile:
+                user_profile.update(extracted_profile)
+                if DEBUG_MODE:
+                    logger.info(f"✅ Updated profile from conversation: {extracted_profile}")
             
-            # Check if profile is complete
-            if not is_profile_complete(user_profile):
-                next_question = generate_next_question(user_profile, conversation_history)
-                if next_question:
-                    print(f"\n💬 {next_question}")
-                    conversation_history.append({"role": "assistant", "content": next_question})
-                    continue
+            # Generate conversational response
+            response = generate_conversational_response(user_input, conversation_history, user_profile)
+            print(f"\n💬 {response}")
+            conversation_history.append({"role": "assistant", "content": response})
             
             # Query Pinecone for relevant products
             pinecone_results = query_pinecone(user_input, top_k=5)
