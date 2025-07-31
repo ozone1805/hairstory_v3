@@ -119,6 +119,12 @@ def chat():
             if DEBUG_MODE:
                 logger.info(f"✅ Updated profile from conversation: {extracted_profile}")
 
+    # Count assistant questions (messages from assistant that end with ?)
+    assistant_questions = 0
+    for msg in conversation_history:
+        if msg["role"] == "assistant" and msg["content"].strip().endswith("?"):
+            assistant_questions += 1
+
     # Check if user is asking for recommendations
     last_user_message = conversation_history[-1]["content"] if conversation_history else ""
     is_asking_for_recommendations = any(
@@ -126,8 +132,15 @@ def chat():
         ['recommend', 'suggest', 'help', 'routine', 'products', 'what should', 'need', 'give me']
     )
 
-    if is_asking_for_recommendations and len(conversation_history) >= 3:
-        # User is asking for recommendations and we have enough conversation history
+    # Force recommendations if we've asked 10+ questions or user is explicitly asking
+    should_give_recommendations = (
+        is_asking_for_recommendations or 
+        assistant_questions >= 10 or 
+        len(conversation_history) >= 20  # Fallback: force after 20 total messages
+    )
+
+    if should_give_recommendations:
+        # Give recommendations - either user asked or we've asked enough questions
         profile_text = profile_to_string(user_profile) if user_profile else "Based on our conversation"
         
         # Query Pinecone for semantically relevant products
@@ -136,6 +149,7 @@ def chat():
         
         if DEBUG_MODE:
             logger.info(f"🔍 PINECONE QUERY: Retrieved {len(relevant_products)} relevant products")
+            logger.info(f"📊 Question count: {assistant_questions} assistant questions, {len(conversation_history)} total messages")
             for i, product in enumerate(relevant_products, 1):
                 logger.info(f"   {i}. {product['name']} (Score: {product['similarity_score']:.3f})")
         
@@ -174,7 +188,7 @@ def chat():
         return jsonify(response)
     else:
         # Continue the conversational flow
-        conversational_response = generate_conversational_response(last_user_message, conversation_history, user_profile)
+        conversational_response = generate_conversational_response(last_user_message, conversation_history, user_profile, assistant_questions)
         response = {
             "profile": user_profile,
             "message": conversational_response

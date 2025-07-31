@@ -40,11 +40,17 @@ index = pc.Index("hairstory-products")
 def load_products_data():
     """Load products data from JSON file for catalog summary."""
     try:
-        with open('data/all_products.json', 'r', encoding='utf-8') as f:
-            products = json.load(f)
-        
-        if DEBUG_MODE:
-            logger.info(f"✅ Loaded {len(products)} products for catalog summary")
+        # Try to load enhanced products first, fall back to original if not available
+        try:
+            with open('data/enhanced_products.json', 'r', encoding='utf-8') as f:
+                products = json.load(f)
+            if DEBUG_MODE:
+                logger.info(f"✅ Loaded {len(products)} enhanced products for catalog summary")
+        except FileNotFoundError:
+            with open('data/all_products.json', 'r', encoding='utf-8') as f:
+                products = json.load(f)
+            if DEBUG_MODE:
+                logger.info(f"✅ Loaded {len(products)} original products for catalog summary (enhanced not found)")
         
         return products
     except Exception as e:
@@ -55,23 +61,65 @@ def create_product_catalog_summary(products: List[Dict]) -> str:
     """Create a concise summary of all products for system context."""
     summary_parts = []
     
-    # Group products by type
-    product_types = {}
-    for product in products:
-        product_type = product.get('type', 'other')
-        if product_type not in product_types:
-            product_types[product_type] = []
-        product_types[product_type].append(product)
+    # Check if we have enhanced product data
+    has_enhanced_data = any('category' in product for product in products)
     
-    # Create summary by type
-    for product_type, type_products in product_types.items():
-        summary_parts.append(f"\n{product_type.upper()} PRODUCTS:")
-        for product in type_products:
-            summary_parts.append(f"• {product['name']} - {product['subtitle']}")
-            if product.get('benefits'):
-                # Take first benefit line
-                benefits = product['benefits'].split('\n')[0]
-                summary_parts.append(f"  Benefits: {benefits}")
+    if has_enhanced_data:
+        # Use enhanced data structure
+        # Group products by category
+        categories = {}
+        for product in products:
+            category = product.get('category', 'other')
+            if category not in categories:
+                categories[category] = []
+            categories[category].append(product)
+        
+        # Create summary by category
+        for category, category_products in sorted(categories.items()):
+            category_name = category.replace('_', ' ').title()
+            summary_parts.append(f"\n{category_name.upper()} PRODUCTS:")
+            
+            for product in category_products:
+                summary_parts.append(f"\n• {product['name']}")
+                summary_parts.append(f"  Purpose: {product['subtitle']}")
+                
+                # Add enhanced description if available
+                if product.get('enhanced_description'):
+                    summary_parts.append(f"  Description: {product['enhanced_description']}")
+                
+                # Add hair type compatibility
+                hair_types = product.get('hair_types', [])
+                if hair_types and hair_types != ['all']:
+                    summary_parts.append(f"  Best For: {', '.join(hair_types)} hair")
+                
+                # Add use cases
+                use_cases = product.get('use_cases', [])
+                if use_cases:
+                    summary_parts.append(f"  Use Cases: {', '.join(use_cases)}")
+                
+                # Add benefits if available
+                if product.get('benefits'):
+                    benefits = product['benefits'].replace('\n', '; ')
+                    summary_parts.append(f"  Key Benefits: {benefits}")
+    else:
+        # Fall back to original structure
+        # Group products by type
+        product_types = {}
+        for product in products:
+            product_type = product.get('type', 'other')
+            if product_type not in product_types:
+                product_types[product_type] = []
+            product_types[product_type].append(product)
+        
+        # Create summary by type
+        for product_type, type_products in product_types.items():
+            summary_parts.append(f"\n{product_type.upper()} PRODUCTS:")
+            for product in type_products:
+                summary_parts.append(f"• {product['name']} - {product['subtitle']}")
+                if product.get('benefits'):
+                    # Take first benefit line
+                    benefits = product['benefits'].split('\n')[0]
+                    summary_parts.append(f"  Benefits: {benefits}")
     
     return "\n".join(summary_parts)
 
@@ -188,7 +236,7 @@ CONVERSATION FLOW:
 
 Remember: You're building trust and understanding, not just collecting data points."""
 
-def generate_conversational_response(user_input: str, conversation_history: List[Dict], user_profile: Dict = None) -> str:
+def generate_conversational_response(user_input: str, conversation_history: List[Dict], user_profile: Dict = None, assistant_questions: int = 0) -> str:
     """
     Generate a conversational response using the LLM that can either:
     1. Ask follow-up questions to learn more about their hair
@@ -221,6 +269,9 @@ def generate_conversational_response(user_input: str, conversation_history: List
     
     system_prompt = create_conversational_hair_profile_system()
     
+    # Check if we're approaching the 10-question limit
+    questions_remaining = 10 - assistant_questions
+    
     if has_sufficient_info:
         # We have enough info and user is asking for recommendations
         prompt = f"""{system_prompt}
@@ -231,6 +282,19 @@ The user seems ready for product recommendations. Based on our conversation, pro
 1. Acknowledge what you've learned about their hair
 2. Ask if they'd like specific product recommendations
 3. If yes, ask them to wait while you prepare personalized suggestions
+
+Response:"""
+    elif questions_remaining <= 2:
+        # We're running out of questions, be more direct
+        prompt = f"""{system_prompt}
+
+{conversation_context}{profile_summary}
+
+The user just said: "{user_input}"
+
+IMPORTANT: We've asked {assistant_questions} questions so far. We only have {questions_remaining} questions left before we need to give recommendations.
+
+Based on what they just shared, ask ONE final important question to gather the most critical information for product recommendations. Focus on the most important missing piece of information.
 
 Response:"""
     else:
@@ -248,6 +312,8 @@ Respond naturally to what they shared. You can:
 - Keep the conversation flowing naturally
 
 Don't ask too many questions at once. Focus on what they just shared and maybe ask one thoughtful follow-up question.
+
+Note: We've asked {assistant_questions} questions so far. We have {questions_remaining} questions remaining before we need to give recommendations.
 
 Response:"""
     
@@ -383,6 +449,50 @@ def create_system_instructions(catalog_summary: str) -> str:
 
 COMPLETE PRODUCT CATALOG SUMMARY:
 {catalog_summary}
+
+RECOMMENDATION GUIDELINES:
+1. **Hair Type Matching**: Always match products to the user's specific hair type
+   - Fine/Oily: New Wash Deep Clean, Powder, Root Lift
+   - Dry/Thick: New Wash Rich, Hair Balm, Oil
+   - Curly/Coily: Hair Balm, Oil, Undressed
+   - Damaged: Bond Boost + Bond Serum combination
+   - All Hair Types: New Wash Original, Primer
+
+2. **Product Categories**: Understand when to recommend different types
+   - Cleansing: Choose appropriate New Wash variant
+   - Pre-Cleansing: Pre-Wash for buildup removal
+   - Pre-Styling: Primer for heat protection
+   - Styling: Products for texture, volume, definition
+   - Damage Repair: Bond products for damaged hair
+   - Color Maintenance: Color Boost products for color-treated hair
+   - Accessories: Tools for application and convenience
+
+3. **Use Case Understanding**: Match products to specific needs
+   - Volume: Root Lift, Powder
+   - Moisture: Hair Balm, Oil, New Wash Rich
+   - Damage Repair: Bond Boost + Bond Serum
+   - Texture: Undressed, Wax
+   - Color Maintenance: Purple/Blue/Red Color Boost
+   - Travel: Travel Bottle
+   - Refills: Cost-effective options for regular users
+   - Trial Kits: Risk-free testing for new users
+   - Bundles: Complete routines for specific needs
+   - Premium: Maximum benefits for comprehensive care
+
+4. **Bundle Recommendations**: Know when to suggest complete routines
+   - Starter Bundles: For new users or complete routine seekers
+   - Damage Repair Bundles: For damaged hair needing comprehensive repair
+   - Styling Bundles: For texture and definition routines
+   - Clarifying Bundles: For buildup removal and hair reset
+   - Premium Bundles: For comprehensive care and maximum benefits
+
+5. **Product Relationships**: Understand which products work together
+   - Bond Boost must be mixed with New Wash
+   - Primer works before any heat styling
+   - Color Boost products maintain specific hair colors
+   - Refills are cost-effective alternatives to full products
+   - Trial Kits are perfect for new users who want to test before committing
+   - Bundles save money compared to buying products individually
 
 INSTRUCTIONS:
 1. Analyze the user's hair type, concerns, and needs from their input and conversation history

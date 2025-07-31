@@ -5,6 +5,29 @@ document.addEventListener('DOMContentLoaded', function() {
     const sendBtn = document.getElementById('send-btn');
     let conversation_history = [];
     let user_profile = {};
+    
+    // Add question counter display
+    const questionCounter = document.createElement('div');
+    questionCounter.id = 'question-counter';
+    questionCounter.style.cssText = 'text-align: center; color: #666; font-size: 12px; margin-bottom: 10px; padding: 5px; background: #f0f0f0; border-radius: 4px;';
+    chat.parentNode.insertBefore(questionCounter, chat);
+    
+    function updateQuestionCounter() {
+        let assistantQuestions = 0;
+        for (let msg of conversation_history) {
+            if (msg.role === 'assistant' && msg.content.trim().endsWith('?')) {
+                assistantQuestions++;
+            }
+        }
+        const questionsRemaining = 10 - assistantQuestions;
+        if (questionsRemaining > 0) {
+            questionCounter.textContent = `Questions remaining before recommendations: ${questionsRemaining}`;
+            questionCounter.style.color = questionsRemaining <= 2 ? '#e74c3c' : '#666';
+        } else {
+            questionCounter.textContent = 'Ready to give recommendations!';
+            questionCounter.style.color = '#27ae60';
+        }
+    }
 
     function appendMessage(sender, text) {
         const div = document.createElement('div');
@@ -29,11 +52,13 @@ document.addEventListener('DOMContentLoaded', function() {
         div.innerHTML = `<b>${sender === 'user' ? 'You' : 'Assistant'}:</b> ` + formattedText;
         chat.appendChild(div);
         chat.scrollTop = chat.scrollHeight;
+        updateQuestionCounter();
     }
 
     // Show initial welcome message
     appendMessage('bot', "Hi! I'd love to help you find the perfect haircare products. Tell me a bit about your hair - what's your hair story?");
     conversation_history.push({ role: 'assistant', content: "Hi! I'd love to help you find the perfect haircare products. Tell me a bit about your hair - what's your hair story?" });
+    updateQuestionCounter();
 
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
