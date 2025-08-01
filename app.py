@@ -5,20 +5,21 @@ import json
 from scripts.hybrid_chatbot import (
     load_products_data,
     create_product_catalog_summary,
-    query_pinecone,
-    format_products_for_prompt,
+    # query_pinecone,  # Commented out for conversations-only approach
+    # format_products_for_prompt,  # Commented out for conversations-only approach
     create_system_instructions,
-    create_recommendation_prompt,
+    # create_recommendation_prompt,  # Commented out - replaced with create_conversations_only_prompt
     profile_to_string,
     is_profile_complete,
     profile_fields,
     generate_next_question,
-    map_user_input_to_field_value,
+    # map_user_input_to_field_value,  # Commented out - no longer needed in conversations-only approach
     generate_conversational_response,
     extract_hair_profile_from_conversation,
     client,
     set_debug_mode
 )
+from typing import List, Dict
 
 # Debug mode configuration
 DEBUG_MODE = False  # Set to False to disable detailed API logging
@@ -56,7 +57,7 @@ def home():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Hairstory Haircare Assistant (Hybrid)</title>
+        <title>Hairstory Haircare Assistant (Conversations-Only)</title>
         <style>
             body { font-family: Arial, sans-serif; background: #f7f7f7; margin: 0; padding: 0; }
             .container { max-width: 500px; margin: 40px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 24px; }
@@ -84,7 +85,7 @@ def home():
     <body>
         <div class="container">
             <h2>Hairstory Haircare Assistant</h2>
-            <div class="subtitle">Powered by Hybrid AI: Semantic Search + Product Knowledge</div>
+            <div class="subtitle">Powered by Conversations API: Fast & Knowledgeable</div>
             <div id="chat"></div>
             <form id="input-area" autocomplete="off">
                 <input id="user-input" autocomplete="off" placeholder="Type your message..." required />
@@ -140,32 +141,29 @@ def chat():
     )
 
     if should_give_recommendations:
-        # Give recommendations - either user asked or we've asked enough questions
+        # Give recommendations using conversations-only approach
         profile_text = profile_to_string(user_profile) if user_profile else "Based on our conversation"
         
-        # Query Pinecone for semantically relevant products
-        pinecone_results = query_pinecone(profile_text, top_k=5)
-        relevant_products = format_products_for_prompt(pinecone_results)
+        # CONVERSATIONS-ONLY APPROACH: No Pinecone query
+        # pinecone_results = query_pinecone(profile_text, top_k=5)  # Commented out
+        # relevant_products = format_products_for_prompt(pinecone_results)  # Commented out
         
         if DEBUG_MODE:
-            logger.info(f"🔍 PINECONE QUERY: Retrieved {len(relevant_products)} relevant products")
+            logger.info(f"🤖 CONVERSATIONS-ONLY: Using full catalog knowledge for recommendations")
             logger.info(f"📊 Question count: {assistant_questions} assistant questions, {len(conversation_history)} total messages")
-            for i, product in enumerate(relevant_products, 1):
-                logger.info(f"   {i}. {product['name']} (Score: {product['similarity_score']:.3f})")
         
-        # Create recommendation prompt with hybrid context
-        recommendation_prompt = create_recommendation_prompt(
+        # Create recommendation prompt with conversations-only context
+        recommendation_prompt = create_conversations_only_prompt(
             profile_text, 
-            relevant_products, 
             conversation_history=conversation_history,
             user_profile=user_profile
         )
         
         if DEBUG_MODE:
-            logger.info(f"🤖 API CALL - Chat Completions: Generating hybrid recommendation")
-            logger.info(f"📝 Hybrid Context: Profile: {profile_text}, Products: {len(relevant_products)} items, Catalog Summary: {len(catalog_summary)} chars")
+            logger.info(f"🤖 API CALL - Chat Completions: Generating conversations-only recommendation")
+            logger.info(f"📝 Context: Profile: {profile_text}, Catalog Summary: {len(catalog_summary)} chars")
         
-        # Call OpenAI with hybrid approach (system instructions + semantic results)
+        # Call OpenAI with conversations-only approach (system instructions only)
         openai_response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -178,11 +176,11 @@ def chat():
         
         recommendation = openai_response.choices[0].message.content
         if DEBUG_MODE:
-            logger.info(f"✅ API RESPONSE - Chat Completions: Generated hybrid recommendation (length: {len(recommendation)} chars)")
+            logger.info(f"✅ API RESPONSE - Chat Completions: Generated conversations-only recommendation (length: {len(recommendation)} chars)")
         
         response = {
             "profile": user_profile,
-            "products": relevant_products,
+            "products": [],  # Empty since we're not using Pinecone results
             "recommendation": recommendation
         }
         return jsonify(response)
@@ -194,6 +192,44 @@ def chat():
             "message": conversational_response
         }
         return jsonify(response)
+
+def create_conversations_only_prompt(profile_text: str, conversation_history: List[Dict] = None, user_profile: Dict = None) -> str:
+    """Create a prompt for conversations-only recommendations using full catalog knowledge."""
+    
+    # Build comprehensive context
+    context_parts = []
+    
+    if user_profile:
+        context_parts.append(f"USER'S HAIR PROFILE: {profile_text}")
+    
+    if conversation_history:
+        # Include key conversation points for context
+        conversation_summary = "CONVERSATION CONTEXT:\n"
+        for msg in conversation_history[-5:]:  # Last 5 messages for context
+            if msg["role"] == "user":
+                conversation_summary += f"- User: {msg['content']}\n"
+        context_parts.append(conversation_summary)
+    
+    context = "\n\n".join(context_parts)
+    
+    return f"""Please provide a personalized recommendation based on the user's needs using your complete product knowledge:
+
+{context}
+
+INSTRUCTIONS:
+1. Analyze the user's hair type, concerns, and needs from their input and conversation history
+2. Consider their complete hair profile when making recommendations
+3. Recommend specific products from the Hairstory catalog that would work best for them
+4. Explain why these products are a good match for their hair type/concerns
+5. Be warm, supportive, and educational
+6. Include product URLs when recommending products
+7. Reference specific details from the conversation to show you understand their needs
+8. Make your response feel conversational and natural, not like a product catalog
+9. Acknowledge their hair journey and be encouraging about their goals
+10. Use their exact words when referencing what they've told you about their hair
+11. You can suggest product combinations and routines based on the user's needs
+
+Please provide a personalized recommendation that feels like a friendly conversation with a haircare expert:"""
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000))) 
