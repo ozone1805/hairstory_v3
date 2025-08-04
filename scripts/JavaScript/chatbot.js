@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const sendBtn = document.getElementById('send-btn');
     let conversation_history = [];
     let user_profile = {};
+    let isSubmitting = false;
     
     // Add question counter display
     const questionCounter = document.createElement('div');
@@ -56,14 +57,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Show initial welcome message
-    appendMessage('bot', "Hi! I'd love to help you find the perfect haircare products. Tell me a bit about your hair - what's your hair story?");
-    conversation_history.push({ role: 'assistant', content: "Hi! I'd love to help you find the perfect haircare products. Tell me a bit about your hair - what's your hair story?" });
+    const welcomeMessage = "Hi! I'd love to help you find the perfect haircare products. Tell me a bit about your hair - what's your hair story?";
+    appendMessage('bot', welcomeMessage);
+    conversation_history.push({ role: 'assistant', content: welcomeMessage });
     updateQuestionCounter();
 
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
         const text = userInput.value.trim();
         if (!text) return;
+        
+        // Prevent double submission
+        if (isSubmitting) {
+            console.log('Preventing double submission');
+            return;
+        }
+        isSubmitting = true;
+        
         appendMessage('user', text);
         conversation_history.push({ role: 'user', content: text });
         userInput.value = '';
@@ -86,6 +96,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 500);
         
         try {
+            console.log('Sending conversation history:', conversation_history);
             const res = await fetch('/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -98,6 +109,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error('Server error: ' + res.status);
             }
             const data = await res.json();
+            console.log('Received response:', data);
             
             // Update user profile with any new information
             user_profile = data.profile || user_profile;
@@ -105,13 +117,14 @@ document.addEventListener('DOMContentLoaded', function() {
             let reply = '';
             if (data.recommendation) {
                 reply = data.recommendation;
-            } else if (data.products && data.products.length > 0) {
-                reply = "Here are some products you might like!";
             } else if (data.message) {
                 reply = data.message;
             } else {
                 reply = 'Sorry, I did not understand.';
             }
+            
+            // Remove any "Assistant:" prefix from the response to prevent duplication
+            reply = reply.replace(/^Assistant:\s*/i, '').trim();
             
             // Add assistant response to conversation history
             conversation_history.push({ role: 'assistant', content: reply });
@@ -128,6 +141,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         userInput.disabled = false;
         sendBtn.disabled = false;
+        isSubmitting = false;
         userInput.focus();
     });
 }); 

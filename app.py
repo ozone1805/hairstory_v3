@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, Response
 import os
 import logging
 import json
+import re
 from scripts.hybrid_chatbot import (
     load_products_data,
     create_product_catalog_summary,
@@ -48,6 +49,8 @@ except Exception as e:
     products = []
     catalog_summary = "Error loading product catalog"
     system_instructions = "You are a haircare assistant. Please inform the user that there was an error loading the product catalog."
+
+
 
 @app.route("/")
 def home():
@@ -111,6 +114,11 @@ def chat():
 
     if DEBUG_MODE:
         logger.info(f"🔄 CHAT REQUEST: Received chat request with {len(conversation_history)} messages in history")
+        # Log the last few messages to debug duplication
+        if conversation_history:
+            logger.info(f"📝 Last 3 messages:")
+            for i, msg in enumerate(conversation_history[-3:]):
+                logger.info(f"  {i+1}. {msg['role']}: {msg['content'][:50]}...")
 
     # Extract hair profile information from the conversation using LLM
     if conversation_history:
@@ -180,7 +188,6 @@ def chat():
         
         response = {
             "profile": user_profile,
-            "products": [],  # Empty since we're not using Pinecone results
             "recommendation": recommendation
         }
         return jsonify(response)
