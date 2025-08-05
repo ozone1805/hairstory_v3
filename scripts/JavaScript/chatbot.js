@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function appendMessage(sender, text) {
+    function appendMessage(sender, text, productImages = []) {
         const div = document.createElement('div');
         div.className = 'msg ' + sender;
         
@@ -50,7 +50,27 @@ document.addEventListener('DOMContentLoaded', function() {
             .replace(/^\*\s(.*?)(?=<br>|$)/gm, '<li>$1</li>')     // Bullet list items
             .replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>');         // Wrap lists in ul tags
         
-        div.innerHTML = `<b>${sender === 'user' ? 'You' : 'Assistant'}:</b> ` + formattedText;
+        let messageContent = `<b>${sender === 'user' ? 'You' : 'Assistant'}:</b> ` + formattedText;
+        
+        // Add product images if available
+        if (productImages && productImages.length > 0) {
+            messageContent += '<div class="product-images">';
+            productImages.forEach(product => {
+                if (product.img_url) {
+                    messageContent += `
+                        <div class="product-image-container">
+                            <img src="${product.img_url}" alt="${product.name}" class="product-image" 
+                                 onclick="window.open('${product.url}', '_blank')" 
+                                 title="Click to view product">
+                            <div class="product-name">${product.name}</div>
+                        </div>
+                    `;
+                }
+            });
+            messageContent += '</div>';
+        }
+        
+        div.innerHTML = messageContent;
         chat.appendChild(div);
         chat.scrollTop = chat.scrollHeight;
         updateQuestionCounter();
@@ -132,7 +152,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Remove the typing indicator
             clearInterval(typingInterval);
             chat.removeChild(typingDiv);
-            appendMessage('bot', reply);
+            appendMessage('bot', reply, data.product_images || []);
         } catch (err) {
             clearInterval(typingInterval);
             chat.removeChild(typingDiv);

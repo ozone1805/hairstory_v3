@@ -38,17 +38,18 @@ def set_debug_mode(enabled: bool):
 
 def load_products_data():
     """Load products data from JSON file."""
+    # Try enhanced_products.json first (has image URLs)
     try:
-        with open("data/all_products.json", "r") as f:
+        with open("data/enhanced_products.json", "r") as f:
             products = json.load(f)
-        logger.info(f"✅ Loaded {len(products)} products from data/all_products.json")
+        logger.info(f"✅ Loaded {len(products)} products from data/enhanced_products.json")
         return products
     except FileNotFoundError:
-        logger.warning("⚠️ all_products.json not found, trying enhanced_products.json")
+        logger.warning("⚠️ enhanced_products.json not found, trying all_products.json")
         try:
-            with open("data/enhanced_products.json", "r") as f:
+            with open("data/all_products.json", "r") as f:
                 products = json.load(f)
-            logger.info(f"✅ Loaded {len(products)} products from data/enhanced_products.json")
+            logger.info(f"✅ Loaded {len(products)} products from data/all_products.json")
             return products
         except FileNotFoundError:
             logger.error("❌ No product data files found")

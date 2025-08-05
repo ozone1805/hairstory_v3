@@ -20,6 +20,7 @@ from scripts.hybrid_chatbot import (
     client,
     set_debug_mode
 )
+import re
 from typing import List, Dict
 
 # Debug mode configuration
@@ -50,6 +51,43 @@ except Exception as e:
     catalog_summary = "Error loading product catalog"
     system_instructions = "You are a haircare assistant. Please inform the user that there was an error loading the product catalog."
 
+def extract_product_images(text: str, products: List[Dict]) -> List[Dict]:
+    """Extract product names from text and return their image URLs."""
+    product_images = []
+    text_lower = text.lower()
+    
+    # Create a mapping of product names to their images
+    product_name_to_image = {}
+    for product in products:
+        # Store both full name and common variations
+        product_name = product['name'].lower()
+        product_name_to_image[product_name] = {
+            'name': product['name'],
+            'img_url': product.get('img_url', ''),
+            'url': product.get('url', '')
+        }
+        
+        # Also store common variations (e.g., "New Wash Original" -> "new wash")
+        if 'new wash' in product_name:
+            product_name_to_image['new wash'] = product_name_to_image[product_name]
+        if 'pre-wash' in product_name or 'pre wash' in product_name:
+            product_name_to_image['pre wash'] = product_name_to_image[product_name]
+        if 'hair balm' in product_name:
+            product_name_to_image['hair balm'] = product_name_to_image[product_name]
+        if 'bond boost' in product_name:
+            product_name_to_image['bond boost'] = product_name_to_image[product_name]
+        if 'bond serum' in product_name:
+            product_name_to_image['bond serum'] = product_name_to_image[product_name]
+    
+    # Extract product names from text (case insensitive)
+    found_products = set()  # To avoid duplicates
+    for product_name, product_info in product_name_to_image.items():
+        if product_name in text_lower and product_info['name'] not in found_products:
+            product_images.append(product_info)
+            found_products.add(product_info['name'])
+    
+    return product_images
+
 
 
 @app.route("/")
@@ -79,6 +117,11 @@ def home():
             .msg a { color: #1a73e8; text-decoration: underline; }
             .msg a:hover { color: #0d47a1; text-decoration: none; }
             .typing-indicator .dots { display: inline-block; min-width: 20px; }
+            .product-images { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+            .product-image-container { text-align: center; }
+            .product-image { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid #e0e0e0; transition: border-color 0.2s; }
+            .product-image:hover { border-color: #1a73e8; }
+            .product-name { font-size: 11px; color: #666; margin-top: 4px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             #input-area { display: flex; }
             #user-input { flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
             #send-btn { padding: 8px 16px; border: none; background: #1a73e8; color: #fff; border-radius: 4px; margin-left: 8px; cursor: pointer; }
@@ -186,9 +229,13 @@ def chat():
         if DEBUG_MODE:
             logger.info(f"✅ API RESPONSE - Chat Completions: Generated conversations-only recommendation (length: {len(recommendation)} chars)")
         
+        # Extract product images from the recommendation
+        product_images = extract_product_images(recommendation, products)
+        
         response = {
             "profile": user_profile,
-            "recommendation": recommendation
+            "recommendation": recommendation,
+            "product_images": product_images
         }
         return jsonify(response)
     else:
