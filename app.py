@@ -231,6 +231,30 @@ def chat():
         
         # Extract product images from the recommendation
         product_images = extract_product_images(recommendation, products)
+
+        # Fetch positive, relevant review snippets for the recommended products
+        try:
+            product_titles = [p.get('name') for p in product_images if p.get('name')]
+            reviews_by_product = fetch_positive_reviews_for_products(product_titles, user_profile, top_k_per_product=2)
+        except Exception as e:
+            if DEBUG_MODE:
+                logger.warning(f"⚠️ Skipping reviews fetch due to error: {e}")
+            reviews_by_product = {}
+
+        # Append a short customer reviews section if available
+        if reviews_by_product:
+            reviews_section_parts = ["\n\nWhat customers are saying:"]
+            for title, reviews in reviews_by_product.items():
+                reviews_section_parts.append(f"\n- **{title}**:")
+                for r in reviews:
+                    snippet = r.get('review_content', '').strip().replace('\n', ' ')
+                    if not snippet:
+                        continue
+                    # Keep snippets short
+                    if len(snippet) > 220:
+                        snippet = snippet[:217].rstrip() + '...'
+                    reviews_section_parts.append(f"  - \"{snippet}\"")
+            recommendation += "\n" + "\n".join(reviews_section_parts)
         
         response = {
             "profile": user_profile,
@@ -246,6 +270,66 @@ def chat():
             "message": conversational_response
         }
         return jsonify(response)
+
+def fetch_positive_reviews_for_products(product_titles: List[str], user_profile: Dict = None, top_k_per_product: int = 2) -> Dict[str, List[Dict]]:
+    """Fetch positive reviews for specific products from Pinecone reviews index."""
+    try:
+        from pinecone import Pinecone
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        # Initialize Pinecone
+        pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+        index = pc.Index("hairstory-reviews")
+        
+        reviews_by_product = {}
+        
+        for product_title in product_titles:
+            if not product_title:
+                continue
+                
+            # Create a query that matches the product title
+            query_text = f"Product: {product_title}"
+            
+            # Query Pinecone for reviews of this product
+            results = index.query(
+                vector=client.embeddings.create(
+                    model="text-embedding-3-small", 
+                    input=query_text
+                ).data[0].embedding,
+                top_k=top_k_per_product * 3,  # Get more to filter for positive ones
+                include_metadata=True,
+                filter={
+                    "product_title_lower": {"$eq": product_title.lower()}
+                }
+            )
+            
+            # Filter for positive reviews (score >= 4) and format
+            positive_reviews = []
+            for match in results.matches:
+                metadata = match.metadata
+                review_score = metadata.get('review_score', 0)
+                
+                if review_score >= 4:  # Only positive reviews
+                    positive_reviews.append({
+                        'review_content': metadata.get('review_content', ''),
+                        'review_score': review_score,
+                        'hair_type': metadata.get('hair_type', ''),
+                        'hair_concerns': metadata.get('hair_concerns', '')
+                    })
+                    
+                    if len(positive_reviews) >= top_k_per_product:
+                        break
+            
+            if positive_reviews:
+                reviews_by_product[product_title] = positive_reviews
+        
+        return reviews_by_product
+        
+    except Exception as e:
+        if DEBUG_MODE:
+            logger.error(f"Error fetching reviews: {e}")
+        return {}
 
 def create_conversations_only_prompt(profile_text: str, conversation_history: List[Dict] = None, user_profile: Dict = None) -> str:
     """Create a prompt for conversations-only recommendations using full catalog knowledge."""
