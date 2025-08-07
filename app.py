@@ -271,17 +271,19 @@ def create_conversations_only_prompt(profile_text: str, conversation_history: Li
 {context}
 
 INSTRUCTIONS:
-1. Analyze the user's hair type, concerns, and needs from their input and conversation history
-2. Consider their complete hair profile when making recommendations
-3. Recommend specific products from the Hairstory catalog that would work best for them
-4. Explain why these products are a good match for their hair type/concerns
-5. Be warm, supportive, and educational
-6. Include product URLs when recommending products
-7. Reference specific details from the conversation to show you understand their needs
-8. Make your response feel conversational and natural, not like a product catalog
-9. Acknowledge their hair journey and be encouraging about their goals
-10. Use their exact words when referencing what they've told you about their hair
-11. You can suggest product combinations and routines based on the user's needs
+1. **MANDATORY**: ALWAYS start with an appropriate New Wash variant - this is the foundation of every haircare routine
+2. Analyze the user's hair type, concerns, and needs from their input and conversation history
+3. Consider their complete hair profile when making recommendations
+4. Recommend New Wash first, then add 2-3 complementary products that work well with New Wash
+5. Explain why New Wash is essential and why these products work together as a complete routine
+6. Be warm, supportive, and educational
+7. Include product URLs when recommending products
+8. Reference specific details from the conversation to show you understand their needs
+9. Make your response feel conversational and natural, not like a product catalog
+10. Acknowledge their hair journey and be encouraging about their goals
+11. Use their exact words when referencing what they've told you about their hair
+12. You can suggest product combinations and routines based on the user's needs
+13. Always explain how New Wash works as the foundation and how other products complement it
 
 Please provide a personalized recommendation that feels like a friendly conversation with a haircare expert:"""
 
