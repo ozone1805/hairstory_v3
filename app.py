@@ -24,7 +24,7 @@ import re
 from typing import List, Dict
 
 # Debug mode configuration
-DEBUG_MODE = False  # Set to False to disable detailed API logging
+DEBUG_MODE = True  # Set to True to enable detailed API logging
 
 # Set debug mode in the chatbot module
 set_debug_mode(DEBUG_MODE)
@@ -67,9 +67,7 @@ def extract_product_images(text: str, products: List[Dict]) -> List[Dict]:
             'url': product.get('url', '')
         }
         
-        # Also store common variations (e.g., "New Wash Original" -> "new wash")
-        if 'new wash' in product_name:
-            product_name_to_image['new wash'] = product_name_to_image[product_name]
+        # Store specific product variations (but avoid generic "new wash" mapping)
         if 'pre-wash' in product_name or 'pre wash' in product_name:
             product_name_to_image['pre wash'] = product_name_to_image[product_name]
         if 'hair balm' in product_name:
@@ -81,10 +79,22 @@ def extract_product_images(text: str, products: List[Dict]) -> List[Dict]:
     
     # Extract product names from text (case insensitive)
     found_products = set()  # To avoid duplicates
+    
+    # First, try to find exact product name matches
     for product_name, product_info in product_name_to_image.items():
         if product_name in text_lower and product_info['name'] not in found_products:
             product_images.append(product_info)
             found_products.add(product_info['name'])
+    
+    # If no exact matches found, try partial matches but be more specific
+    if not product_images:
+        for product_name, product_info in product_name_to_image.items():
+            # Only use partial matches for specific cases, not generic "new wash"
+            if (product_name in text_lower and 
+                product_info['name'] not in found_products and
+                product_name not in ['new wash']):  # Avoid generic "new wash" matches
+                product_images.append(product_info)
+                found_products.add(product_info['name'])
     
     return product_images
 
@@ -231,11 +241,18 @@ def chat():
         
         # Extract product images from the recommendation
         product_images = extract_product_images(recommendation, products)
+        
+        if DEBUG_MODE:
+            logger.info(f"🔍 Extracted products: {[p.get('name') for p in product_images]}")
 
         # Fetch positive, relevant review snippets for the recommended products
         try:
             product_titles = [p.get('name') for p in product_images if p.get('name')]
+            if DEBUG_MODE:
+                logger.info(f"🔍 Looking for reviews for: {product_titles}")
             reviews_by_product = fetch_positive_reviews_for_products(product_titles, user_profile, top_k_per_product=2)
+            if DEBUG_MODE:
+                logger.info(f"🔍 Found reviews for: {list(reviews_by_product.keys())}")
         except Exception as e:
             if DEBUG_MODE:
                 logger.warning(f"⚠️ Skipping reviews fetch due to error: {e}")
@@ -297,11 +314,8 @@ def fetch_positive_reviews_for_products(product_titles: List[str], user_profile:
                     model="text-embedding-3-small", 
                     input=query_text
                 ).data[0].embedding,
-                top_k=top_k_per_product * 3,  # Get more to filter for positive ones
-                include_metadata=True,
-                filter={
-                    "product_title_lower": {"$eq": product_title.lower()}
-                }
+                top_k=top_k_per_product * 5,  # Get more to filter for positive ones
+                include_metadata=True
             )
             
             # Filter for positive reviews (score >= 4) and format
@@ -309,8 +323,20 @@ def fetch_positive_reviews_for_products(product_titles: List[str], user_profile:
             for match in results.matches:
                 metadata = match.metadata
                 review_score = metadata.get('review_score', 0)
+                review_product_title = metadata.get('product_title', '').lower()
                 
-                if review_score >= 4:  # Only positive reviews
+                # Check if this review is for the correct product
+                # Use more precise matching to avoid partial matches
+                product_words = product_title.lower().split()
+                # Clean up review product title (remove punctuation, etc.)
+                review_words = review_product_title.lower().replace('.', '').replace(',', '').split()
+                
+                # Check if all words in the product title are in the review product title
+                # This prevents "New Wash Original" from matching "New Wash Dispenser with Pump"
+                matches = all(word in review_words for word in product_words)
+                
+                if (review_score >= 4 and  # Only positive reviews
+                    matches):  # Product title matches precisely
                     positive_reviews.append({
                         'review_content': metadata.get('review_content', ''),
                         'review_score': review_score,
