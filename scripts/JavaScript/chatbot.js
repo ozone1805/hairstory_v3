@@ -72,7 +72,34 @@ document.addEventListener('DOMContentLoaded', function() {
         
         div.innerHTML = messageContent;
         chat.appendChild(div);
-        chat.scrollTop = chat.scrollHeight;
+        
+        // Smart scroll: only auto-scroll if user is already near the bottom
+        const isNearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 100;
+        if (isNearBottom) {
+            chat.scrollTop = chat.scrollHeight;
+        } else {
+            // Show a subtle indicator that there's new content
+            const scrollIndicator = document.getElementById('scroll-indicator');
+            if (!scrollIndicator) {
+                const indicator = document.createElement('div');
+                indicator.id = 'scroll-indicator';
+                indicator.innerHTML = '↓ New message';
+                indicator.style.cssText = 'position: fixed; bottom: 80px; right: 20px; background: #1a73e8; color: white; padding: 8px 12px; border-radius: 20px; font-size: 12px; cursor: pointer; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.2);';
+                indicator.onclick = () => {
+                    chat.scrollTop = chat.scrollHeight;
+                    indicator.remove();
+                };
+                document.body.appendChild(indicator);
+                
+                // Auto-remove indicator after 5 seconds
+                setTimeout(() => {
+                    if (indicator.parentNode) {
+                        indicator.remove();
+                    }
+                }, 5000);
+            }
+        }
+        
         updateQuestionCounter();
     }
 
@@ -105,7 +132,12 @@ document.addEventListener('DOMContentLoaded', function() {
         typingDiv.className = 'msg bot typing-indicator';
         typingDiv.innerHTML = '<b>Assistant:</b> <span class="dots"></span>';
         chat.appendChild(typingDiv);
-        chat.scrollTop = chat.scrollHeight;
+        
+        // Only auto-scroll for typing indicator if user is near bottom
+        const isNearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 100;
+        if (isNearBottom) {
+            chat.scrollTop = chat.scrollHeight;
+        }
         
         // Animate the dots
         let dotCount = 0;

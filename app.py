@@ -56,6 +56,9 @@ def extract_product_images(text: str, products: List[Dict]) -> List[Dict]:
     product_images = []
     text_lower = text.lower()
     
+    if DEBUG_MODE:
+        logger.info(f"🔍 Extracting products from text of length: {len(text)}")
+    
     # Create a mapping of product names to their images
     product_name_to_image = {}
     for product in products:
@@ -80,19 +83,35 @@ def extract_product_images(text: str, products: List[Dict]) -> List[Dict]:
     # Extract product names from text (case insensitive)
     found_products = set()  # To avoid duplicates
     
-    # First, try to find exact product name matches
-    for product_name, product_info in product_name_to_image.items():
-        if product_name in text_lower and product_info['name'] not in found_products:
-            product_images.append(product_info)
-            found_products.add(product_info['name'])
+    # Look for products that are explicitly mentioned as recommendations
+    # Check for patterns like "I recommend", "I suggest", "adding", etc.
+    recommendation_patterns = [
+        'i recommend', 'i suggest', 'adding', 'also suggest', 'also recommend',
+        'suggest adding', 'recommend adding', 'try', 'use', 'start with'
+    ]
     
-    # If no exact matches found, try partial matches but be more specific
+    # First, try to find products mentioned in recommendation context
+    for product_name, product_info in product_name_to_image.items():
+        if product_info['name'] not in found_products:
+            # Check if product is mentioned near recommendation keywords
+            for pattern in recommendation_patterns:
+                if pattern in text_lower and product_name in text_lower:
+                    # Find the position of the pattern and product
+                    pattern_pos = text_lower.find(pattern)
+                    product_pos = text_lower.find(product_name)
+                    
+                    # If they're within 200 characters of each other, it's likely a recommendation
+                    if abs(pattern_pos - product_pos) < 200:
+                        if DEBUG_MODE:
+                            logger.info(f"🔍 Found recommendation: '{product_info['name']}' near pattern '{pattern}' (distance: {abs(pattern_pos - product_pos)})")
+                        product_images.append(product_info)
+                        found_products.add(product_info['name'])
+                        break
+    
+    # If no recommendations found, fall back to exact matches
     if not product_images:
         for product_name, product_info in product_name_to_image.items():
-            # Only use partial matches for specific cases, not generic "new wash"
-            if (product_name in text_lower and 
-                product_info['name'] not in found_products and
-                product_name not in ['new wash']):  # Avoid generic "new wash" matches
+            if product_name in text_lower and product_info['name'] not in found_products:
                 product_images.append(product_info)
                 found_products.add(product_info['name'])
     
@@ -244,6 +263,9 @@ def chat():
         
         if DEBUG_MODE:
             logger.info(f"🔍 Extracted products: {[p.get('name') for p in product_images]}")
+            logger.info(f"🔍 Recommendation text length: {len(recommendation)}")
+            # Log the first 500 characters to see what we're working with
+            logger.info(f"🔍 Recommendation preview: {recommendation[:500]}...")
 
         # Fetch positive, relevant review snippets for the recommended products
         try:
