@@ -58,27 +58,45 @@ def extract_product_images(text: str, products: List[Dict]) -> List[Dict]:
     
     if DEBUG_MODE:
         logger.info(f"🔍 Extracting products from text of length: {len(text)}")
+        logger.info(f"🔍 Total products loaded: {len(products)}")
+        # Check if Undressed is in the products list
+        undressed_products = [p for p in products if 'undressed' in p['name'].lower()]
+        if undressed_products:
+            logger.info(f"🔍 Found Undressed products: {[p['name'] for p in undressed_products]}")
+        else:
+            logger.warning("⚠️ No Undressed products found in database!")
     
     # Create a mapping of product names to their images
     product_name_to_image = {}
     for product in products:
         # Store both full name and common variations
         product_name = product['name'].lower()
-        product_name_to_image[product_name] = {
+        product_info = {
             'name': product['name'],
             'img_url': product.get('img_url', ''),
             'url': product.get('url', '')
         }
+        product_name_to_image[product_name] = product_info
         
-        # Store specific product variations (but avoid generic "new wash" mapping)
-        if 'pre-wash' in product_name or 'pre wash' in product_name:
-            product_name_to_image['pre wash'] = product_name_to_image[product_name]
-        if 'hair balm' in product_name:
-            product_name_to_image['hair balm'] = product_name_to_image[product_name]
-        if 'bond boost' in product_name:
-            product_name_to_image['bond boost'] = product_name_to_image[product_name]
-        if 'bond serum' in product_name:
-            product_name_to_image['bond serum'] = product_name_to_image[product_name]
+        # Debug: Check if Undressed is being loaded
+        if 'undressed' in product_name:
+            if DEBUG_MODE:
+                logger.info(f"🔍 Found Undressed in products: {product['name']}")
+        
+        # Store specific product variations with proper object copying
+        # Only create variations for exact matches to avoid conflicts
+        if product_name == 'pre-wash':
+            product_name_to_image['pre wash'] = product_info.copy()
+        elif product_name == 'hair balm':
+            product_name_to_image['hair balm'] = product_info.copy()
+        elif product_name == 'bond boost':
+            product_name_to_image['bond boost'] = product_info.copy()
+        elif product_name == 'bond boost for new wash':
+            product_name_to_image['bond boost'] = product_info.copy()
+        elif product_name == 'bond serum':
+            product_name_to_image['bond serum'] = product_info.copy()
+        elif product_name == 'undressed':
+            product_name_to_image['undressed'] = product_info.copy()
     
     # Extract product names from text (case insensitive)
     found_products = set()  # To avoid duplicates
@@ -115,7 +133,124 @@ def extract_product_images(text: str, products: List[Dict]) -> List[Dict]:
                 product_images.append(product_info)
                 found_products.add(product_info['name'])
     
-    return product_images
+    # Final comprehensive check: Look for any product name mentioned anywhere in the text
+    # This catches products mentioned in different contexts, but be more selective
+    for product_name, product_info in product_name_to_image.items():
+        if product_info['name'] not in found_products:
+            # Check if the product name appears anywhere in the text (case insensitive)
+            # But only if it's not in the reviews section (which might mention alternatives)
+            if product_info['name'].lower() in text.lower():
+                # Skip if this appears to be in a reviews section or alternative mention
+                text_lower = text.lower()
+                product_lower = product_info['name'].lower()
+                
+                # Check if this is likely a recommendation vs just a mention
+                is_recommendation = False
+                for pattern in recommendation_patterns:
+                    if pattern in text_lower:
+                        pattern_pos = text_lower.find(pattern)
+                        product_pos = text_lower.find(product_lower)
+                        if abs(pattern_pos - product_pos) < 300:  # Within 300 chars
+                            is_recommendation = True
+                            break
+                
+                if is_recommendation:
+                    if DEBUG_MODE:
+                        logger.info(f"🔍 Found comprehensive match: '{product_info['name']}'")
+                    product_images.append(product_info)
+                    found_products.add(product_info['name'])
+    
+    # Ultra comprehensive check: Look for product name variations and partial matches
+    # This handles cases where product names might be mentioned in different forms
+    # But be more precise to avoid conflicts between similar products
+    product_variations = {
+        'new wash original': ['new wash original'],  # Be specific, don't match generic "new wash"
+        'new wash rich': ['new wash rich'],  # Be specific, don't match generic "new wash"
+        'hair balm': ['hair balm', 'balm'],
+        'undressed': ['undressed'],
+        'oil': ['oil'],
+        'primer': ['primer'],
+        'bond boost': ['bond boost'],  # Don't match "bond boost for new wash" with "bond boost"
+        'bond boost for new wash': ['bond boost for new wash'],
+        'bond serum': ['bond serum'],
+        'pre-wash': ['pre-wash', 'pre wash'],
+        'red color boost': ['red color boost'],
+        'purple color boost': ['purple color boost'],
+        'blue color boost': ['blue color boost'],
+        'powder': ['powder'],
+        'root lift': ['root lift'],
+        'wax': ['wax']
+    }
+    
+    for product_name, product_info in product_name_to_image.items():
+        if product_info['name'] not in found_products:
+            # Check for variations of this product name
+            product_lower = product_name.lower()
+            if product_lower in product_variations:
+                for variation in product_variations[product_lower]:
+                    if variation in text.lower():
+                        if DEBUG_MODE:
+                            logger.info(f"🔍 Found variation match: '{product_info['name']}' via '{variation}'")
+                        product_images.append(product_info)
+                        found_products.add(product_info['name'])
+                        break
+    
+    # Final fallback: Direct text search for any product name
+    # This catches any product mentioned in the text that wasn't found by other methods
+    for product_name, product_info in product_name_to_image.items():
+        if product_info['name'] not in found_products:
+            # Check if the exact product name appears in the text
+            if product_info['name'].lower() in text.lower():
+                if DEBUG_MODE:
+                    logger.info(f"🔍 Found direct match: '{product_info['name']}'")
+                product_images.append(product_info)
+                found_products.add(product_info['name'])
+    
+    # Limit results to only the most relevant products (max 4) and ensure they match recommendations
+    # Sort by relevance: exact matches first, then partial matches
+    final_products = []
+    seen_names = set()
+    
+    # First, prioritize products that are explicitly mentioned in the recommendation text
+    # Use exact matching to avoid substitutions
+    for product in product_images:
+        if product['name'] not in seen_names:
+            # Check if the exact product name appears in the text
+            product_name_lower = product['name'].lower()
+            text_lower = text.lower()
+            
+            # Look for exact product name match, but only in the main recommendation section
+            # Skip products that only appear in reviews or alternative mentions
+            if product_name_lower in text_lower:
+                # Check if this product is mentioned in the main recommendation section
+                # (before any "What customers are saying" section)
+                main_section = text_lower
+                if "what customers are saying" in text_lower:
+                    main_section = text_lower.split("what customers are saying")[0]
+                
+                if product_name_lower in main_section:
+                    final_products.append(product)
+                    seen_names.add(product['name'])
+                    if DEBUG_MODE:
+                        logger.info(f"🔍 Added to final products: '{product['name']}' (main section match)")
+                else:
+                    if DEBUG_MODE:
+                        logger.info(f"🔍 Skipped '{product['name']}' (only in reviews/alternatives)")
+    
+    # Only add fallback products if we have very few products (less than 2)
+    # This prevents adding products that weren't explicitly recommended
+    if len(final_products) < 2:
+        for product in product_images:
+            if product['name'] not in seen_names and len(final_products) < 4:
+                final_products.append(product)
+                seen_names.add(product['name'])
+                if DEBUG_MODE:
+                    logger.info(f"🔍 Added to final products: '{product['name']}' (fallback)")
+    
+    if DEBUG_MODE:
+        logger.info(f"🔍 Final products selected: {[p['name'] for p in final_products]}")
+    
+    return final_products
 
 
 
