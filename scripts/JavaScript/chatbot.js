@@ -38,9 +38,12 @@ document.addEventListener('DOMContentLoaded', function() {
         let formattedText = text
             .replace(/\\n/g, '<br>')  // Handle escaped newlines
             .replace(/\n/g, '<br>')   // Handle actual newlines
+            // Clean up any malformed HTML that the AI might generate
+            .replace(/(https?:\/\/[^"'\s]+)"[^"]*"[^>]*>[^<]*/g, '$1')  // Remove malformed HTML with text after >
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')  // Markdown links
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')  // Bold text
             .replace(/\*(.*?)\*/g, '<em>$1</em>')              // Italic text
+            .replace(/(https?:\/\/(?:www\.)?[^\s<>"']+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">here</a>')  // Plain URLs (after other formatting)
             .replace(/### (.*?)(?=<br>|$)/g, '<h3>$1</h3>')    // Headers
             .replace(/## (.*?)(?=<br>|$)/g, '<h4>$1</h4>')     // Sub-headers
             .replace(/### (.*?)(?=<br>|$)/g, '<h3>$1</h3>')    // Headers (again for nested)
@@ -49,6 +52,15 @@ document.addEventListener('DOMContentLoaded', function() {
             .replace(/^\d+\.\s(.*?)(?=<br>|$)/gm, '<li>$1</li>')  // Numbered list items
             .replace(/^\*\s(.*?)(?=<br>|$)/gm, '<li>$1</li>')     // Bullet list items
             .replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>');         // Wrap lists in ul tags
+        
+        // Debug: Log URLs found in the text
+        const urlMatches = text.match(/(https?:\/\/(?:www\.)?[^\s<>"']+)/g);
+        if (urlMatches) {
+            console.log('Found URLs in text:', urlMatches);
+        }
+        
+        // Also log the original text to see what the AI is generating
+        console.log('Original text from AI:', text);
         
         let messageContent = `<b>${sender === 'user' ? 'You' : 'Assistant'}:</b> ` + formattedText;
         

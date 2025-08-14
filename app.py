@@ -544,13 +544,14 @@ INSTRUCTIONS:
 4. Recommend New Wash first, then add 2-3 complementary products that work well with New Wash
 5. Explain why New Wash is essential and why these products work together as a complete routine
 6. Be warm, supportive, and educational
-7. Include product URLs when recommending products
+7. Include product URLs when recommending products (use plain URLs only, do not generate HTML, and include a URL for EVERY product you recommend)
 8. Reference specific details from the conversation to show you understand their needs
 9. Make your response feel conversational and natural, not like a product catalog
 10. Acknowledge their hair journey and be encouraging about their goals
 11. Use their exact words when referencing what they've told you about their hair
 12. You can suggest product combinations and routines based on the user's needs
 13. Always explain how New Wash works as the foundation and how other products complement it
+14. **IMPORTANT**: For each product you recommend, include its URL in the format: "Product Name (here: URL)" or "Product Name - URL"
 
 Please provide a personalized recommendation that feels like a friendly conversation with a haircare expert:"""
 
