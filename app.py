@@ -459,6 +459,8 @@ def fetch_positive_reviews_for_products(product_titles: List[str], user_profile:
         reviews_by_product = {}
         
         for product_title in product_titles:
+            if DEBUG_MODE:
+                logger.info(f"🔍 Fetching reviews for: {product_title}")
             if not product_title:
                 continue
                 
@@ -471,7 +473,7 @@ def fetch_positive_reviews_for_products(product_titles: List[str], user_profile:
                     model="text-embedding-3-small", 
                     input=query_text
                 ).data[0].embedding,
-                top_k=top_k_per_product * 5,  # Get more to filter for positive ones
+                top_k=top_k_per_product * 10,  # Get more to filter for quality ones
                 include_metadata=True
             )
             
@@ -481,6 +483,7 @@ def fetch_positive_reviews_for_products(product_titles: List[str], user_profile:
                 metadata = match.metadata
                 review_score = metadata.get('review_score', 0)
                 review_product_title = metadata.get('product_title', '').lower()
+                review_content = metadata.get('review_content', '').strip()
                 
                 # Check if this review is for the correct product
                 # Use more precise matching to avoid partial matches
@@ -492,20 +495,184 @@ def fetch_positive_reviews_for_products(product_titles: List[str], user_profile:
                 # This prevents "New Wash Original" from matching "New Wash Dispenser with Pump"
                 matches = all(word in review_words for word in product_words)
                 
-                if (review_score >= 4 and  # Only positive reviews
-                    matches):  # Product title matches precisely
-                    positive_reviews.append({
-                        'review_content': metadata.get('review_content', ''),
-                        'review_score': review_score,
-                        'hair_type': metadata.get('hair_type', ''),
-                        'hair_concerns': metadata.get('hair_concerns', '')
-                    })
+                # Quality filtering for review content
+                def is_quality_review(content):
+                    """Check if review content meets quality standards."""
+                    if not content:
+                        return False
                     
-                    if len(positive_reviews) >= top_k_per_product:
+                    # Remove common HTML entities and clean up
+                    content_clean = content.replace('&#x27;', "'").replace('&quot;', '"').replace('&amp;', '&')
+                    
+                    # Skip reviews that are just the product name
+                    product_names = ['hair balm', 'new wash', 'undressed', 'bond boost', 'primer', 'rich', 'original']
+                    if content_clean.lower().strip() in product_names:
+                        return False
+                    
+                    # Skip very short reviews (less than 15 characters)
+                    if len(content_clean.strip()) < 15:
+                        return False
+                    
+                    # Skip reviews that are mostly punctuation or repeated characters
+                    if len(set(content_clean)) < 5:
+                        return False
+                    
+                    # Skip reviews that are just repeated words
+                    words = content_clean.split()
+                    if len(words) < 3:
+                        return False
+                    
+                    # Skip reviews that are mostly the same word repeated
+                    unique_words = set(words)
+                    if len(unique_words) < 3:
+                        return False
+                    
+                    # Skip reviews with obvious major typos or very poor quality
+                    problematic_patterns = [
+                        'smeds',  # "It smeds lovely"
+                        'lovely',  # Often used in very short, unhelpful reviews
+                        'nice',   # Often used in very short, unhelpful reviews
+                        'good',   # Often used in very short, unhelpful reviews
+                        'great',  # Often used in very short, unhelpful reviews
+                        'awesome', # Often used in very short, unhelpful reviews
+                        'amazing', # Often used in very short, unhelpful reviews
+                    ]
+                    
+                    # If the review is very short and contains problematic words, skip it
+                    if len(content_clean.strip()) < 25:
+                        for pattern in problematic_patterns:
+                            if pattern in content_clean.lower():
+                                return False
+                    
+                    # Skip reviews that are just exclamations or very repetitive
+                    if content_clean.count('!') > len(content_clean) * 0.1:  # More than 10% exclamation marks
+                        return False
+                    
+                    # Skip reviews that are mostly repeated characters or patterns
+                    if len(set(content_clean.lower())) < len(content_clean) * 0.3:  # Less than 30% unique characters
+                        return False
+                    
+                    # Skip reviews that don't contain any meaningful words about hair or product benefits
+                    meaningful_words = ['hair', 'curls', 'waves', 'soft', 'smooth', 'frizz', 'moisture', 'shine', 'volume', 'texture', 'defined', 'dry', 'wash', 'use', 'product', 'love', 'like', 'works', 'feel', 'look']
+                    has_meaningful_content = any(word in content_clean.lower() for word in meaningful_words)
+                    
+                    # For very short reviews, require meaningful content
+                    if len(content_clean.strip()) < 40 and not has_meaningful_content:
+                        return False
+                    
+                    return True
+                
+                if (review_score >= 4 and  # Only positive reviews
+                    matches and  # Product title matches precisely
+                    is_quality_review(review_content)):  # Quality content check
+                    
+                    # Calculate a quality score for this review
+                    def calculate_quality_score(content, score):
+                        """Calculate a quality score for the review."""
+                        quality_score = score  # Start with the review score
+                        
+                        # Bonus for longer, more detailed reviews
+                        content_length = len(content.strip())
+                        if content_length > 150:
+                            quality_score += 2
+                        elif content_length > 100:
+                            quality_score += 1.5
+                        elif content_length > 50:
+                            quality_score += 1
+                        elif content_length > 30:
+                            quality_score += 0.5
+                        
+                        # Bonus for reviews that mention specific benefits and hair types
+                        benefit_keywords = ['soft', 'smooth', 'defined', 'curls', 'waves', 'frizz', 'moisture', 'shine', 'volume', 'texture', 'dry', 'oily', 'thick', 'thin', 'fine', 'coarse']
+                        benefit_count = sum(1 for keyword in benefit_keywords if keyword in content.lower())
+                        quality_score += benefit_count * 0.3
+                        
+                        # Bonus for reviews that mention specific hair types or concerns
+                        hair_type_keywords = ['curly', 'wavy', 'straight', 'fine', 'thick', 'dry', 'oily', 'color-treated', 'damaged']
+                        hair_type_count = sum(1 for keyword in hair_type_keywords if keyword in content.lower())
+                        quality_score += hair_type_count * 0.4
+                        
+                        # Bonus for reviews that mention specific usage instructions or results
+                        usage_keywords = ['air dry', 'blow dry', 'wash', 'use', 'apply', 'leave in', 'rinse', 'comb', 'brush']
+                        usage_count = sum(1 for keyword in usage_keywords if keyword in content.lower())
+                        quality_score += usage_count * 0.2
+                        
+                        # Penalty for very short reviews
+                        if content_length < 30:
+                            quality_score -= 1
+                        elif content_length < 50:
+                            quality_score -= 0.5
+                        
+                        # Penalty for reviews that are too generic
+                        generic_words = ['good', 'great', 'nice', 'lovely', 'awesome', 'amazing', 'perfect']
+                        generic_count = sum(1 for word in generic_words if word in content.lower())
+                        if generic_count > 2:
+                            quality_score -= 0.5
+                        
+                        return quality_score
+                    
+                    quality_score = calculate_quality_score(review_content, review_score)
+                    
+                    # Only include reviews that meet a minimum quality threshold
+                    if quality_score >= 4.5:  # Minimum quality threshold
+                        positive_reviews.append({
+                            'review_content': review_content,
+                            'review_score': review_score,
+                            'quality_score': quality_score,
+                            'hair_type': metadata.get('hair_type', ''),
+                            'hair_concerns': metadata.get('hair_concerns', '')
+                        })
+                        if DEBUG_MODE:
+                            logger.info(f"✅ Accepted review (score: {quality_score:.1f}): {review_content[:50]}...")
+                    else:
+                        if DEBUG_MODE:
+                            logger.debug(f"❌ Rejected review (score: {quality_score:.1f}): {review_content[:50]}...")
+                    
+                    if len(positive_reviews) >= top_k_per_product * 2:  # Get more to sort by quality
                         break
             
             if positive_reviews:
-                reviews_by_product[product_title] = positive_reviews
+                # Sort by quality score (highest first) and take the top ones
+                positive_reviews.sort(key=lambda x: x['quality_score'], reverse=True)
+                reviews_by_product[product_title] = positive_reviews[:top_k_per_product]
+                if DEBUG_MODE:
+                    logger.info(f"✅ Found {len(reviews_by_product[product_title])} quality reviews for {product_title}")
+            else:
+                if DEBUG_MODE:
+                    logger.warning(f"⚠️ No quality reviews found for {product_title}, trying with lower threshold...")
+                
+                # Fallback: try with a lower quality threshold if no reviews found
+                fallback_reviews = []
+                for match in results.matches:
+                    metadata = match.metadata
+                    review_score = metadata.get('review_score', 0)
+                    review_product_title = metadata.get('product_title', '').lower()
+                    review_content = metadata.get('review_content', '').strip()
+                    
+                    # Check product matching
+                    product_words = product_title.lower().split()
+                    review_words = review_product_title.lower().replace('.', '').replace(',', '').split()
+                    matches = all(word in review_words for word in product_words)
+                    
+                    if (review_score >= 4 and matches and is_quality_review(review_content)):
+                        quality_score = calculate_quality_score(review_content, review_score)
+                        if quality_score >= 4.0:  # Lower threshold for fallback
+                            fallback_reviews.append({
+                                'review_content': review_content,
+                                'review_score': review_score,
+                                'quality_score': quality_score,
+                                'hair_type': metadata.get('hair_type', ''),
+                                'hair_concerns': metadata.get('hair_concerns', '')
+                            })
+                
+                if fallback_reviews:
+                    fallback_reviews.sort(key=lambda x: x['quality_score'], reverse=True)
+                    reviews_by_product[product_title] = fallback_reviews[:top_k_per_product]
+                    if DEBUG_MODE:
+                        logger.info(f"✅ Found {len(reviews_by_product[product_title])} fallback reviews for {product_title}")
+                else:
+                    if DEBUG_MODE:
+                        logger.warning(f"⚠️ No reviews found for {product_title} even with fallback")
         
         return reviews_by_product
         
