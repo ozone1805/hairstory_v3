@@ -76,6 +76,10 @@ def extract_product_images(text: str, products: List[Dict]) -> List[Dict]:
             'img_url': product.get('img_url', ''),
             'url': product.get('url', '')
         }
+        
+        # Debug: Log product URLs to check for issues
+        if DEBUG_MODE and product.get('url'):
+            logger.info(f"🔍 Product '{product['name']}' URL: '{product.get('url')}'")
         product_name_to_image[product_name] = product_info
         
         # Debug: Check if Undressed is being loaded
@@ -206,17 +210,16 @@ def extract_product_images(text: str, products: List[Dict]) -> List[Dict]:
                 product_images.append(product_info)
                 found_products.add(product_info['name'])
     
-    # Limit results to only the most relevant products (max 4) and ensure they match recommendations
-    # Sort by relevance: exact matches first, then partial matches
-    final_products = []
-    seen_names = set()
+    # Deduplicate and limit results to only the most relevant products (max 4)
+    # Use a dictionary to ensure each product appears only once
+    unique_products = {}
     
     # First, prioritize products that are explicitly mentioned in the recommendation text
-    # Use exact matching to avoid substitutions
     for product in product_images:
-        if product['name'] not in seen_names:
+        product_name = product['name']
+        if product_name not in unique_products:
             # Check if the exact product name appears in the text
-            product_name_lower = product['name'].lower()
+            product_name_lower = product_name.lower()
             text_lower = text.lower()
             
             # Look for exact product name match, but only in the main recommendation section
@@ -229,26 +232,31 @@ def extract_product_images(text: str, products: List[Dict]) -> List[Dict]:
                     main_section = text_lower.split("what customers are saying")[0]
                 
                 if product_name_lower in main_section:
-                    final_products.append(product)
-                    seen_names.add(product['name'])
+                    unique_products[product_name] = product
                     if DEBUG_MODE:
-                        logger.info(f"🔍 Added to final products: '{product['name']}' (main section match)")
+                        logger.info(f"🔍 Added to final products: '{product_name}' (main section match)")
                 else:
                     if DEBUG_MODE:
-                        logger.info(f"🔍 Skipped '{product['name']}' (only in reviews/alternatives)")
+                        logger.info(f"🔍 Skipped '{product_name}' (only in reviews/alternatives)")
     
     # Only add fallback products if we have very few products (less than 2)
     # This prevents adding products that weren't explicitly recommended
-    if len(final_products) < 2:
+    if len(unique_products) < 2:
         for product in product_images:
-            if product['name'] not in seen_names and len(final_products) < 4:
-                final_products.append(product)
-                seen_names.add(product['name'])
+            product_name = product['name']
+            if product_name not in unique_products and len(unique_products) < 4:
+                unique_products[product_name] = product
                 if DEBUG_MODE:
-                    logger.info(f"🔍 Added to final products: '{product['name']}' (fallback)")
+                    logger.info(f"🔍 Added to final products: '{product_name}' (fallback)")
+    
+        # Convert back to list and limit to max 4 products
+    final_products = list(unique_products.values())[:4]
     
     if DEBUG_MODE:
         logger.info(f"🔍 Final products selected: {[p['name'] for p in final_products]}")
+        # Debug: Log the actual URLs being sent
+        for product in final_products:
+            logger.info(f"🔍 Sending product '{product['name']}' with URL: '{product.get('url', 'NO_URL')}'")
     
     return final_products
 
@@ -283,9 +291,14 @@ def home():
             .typing-indicator .dots { display: inline-block; min-width: 20px; }
             .product-images { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
             .product-image-container { text-align: center; }
-            .product-image { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid #e0e0e0; transition: border-color 0.2s; }
-            .product-image:hover { border-color: #1a73e8; }
+            .product-image { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid #e0e0e0; transition: all 0.2s; }
+            .product-image:hover { border-color: #1a73e8; transform: scale(1.05); }
+            .product-image-container a { display: block; transition: all 0.2s; border-radius: 8px; }
+            .product-image-container a:hover { transform: scale(1.02); box-shadow: 0 4px 12px rgba(26, 115, 232, 0.3); }
             .product-name { font-size: 11px; color: #666; margin-top: 4px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .product-image-container a::after { content: "🔗"; position: absolute; top: -5px; right: -5px; font-size: 10px; background: #1a73e8; color: white; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+            .product-image-container a:hover::after { opacity: 1; }
+            .product-image-container { text-align: center; position: relative; }
             #input-area { display: flex; }
             #user-input { flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
             #send-btn { padding: 8px 16px; border: none; background: #1a73e8; color: #fff; border-radius: 4px; margin-left: 8px; cursor: pointer; }
@@ -718,7 +731,8 @@ INSTRUCTIONS:
 11. Use their exact words when referencing what they've told you about their hair
 12. You can suggest product combinations and routines based on the user's needs
 13. Always explain how New Wash works as the foundation and how other products complement it
-14. **IMPORTANT**: For each product you recommend, include its URL in the format: "Product Name (here: URL)" or "Product Name - URL"
+14. **DO NOT include URLs in your text response** - the product images below will provide clickable links to the products. Focus on describing the products and their benefits naturally.
+15. **AVOID REPETITIVE FORMATTING**: Do not create numbered lists, bullet points, or repeat products in a "routine summary" format. Mention each product once naturally within your conversational response. Do not say things like "So, your personalized routine would look like this:" followed by a numbered list.
 
 Please provide a personalized recommendation that feels like a friendly conversation with a haircare expert:"""
 

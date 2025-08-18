@@ -30,6 +30,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Escape regex special characters in a string
+    function escapeRegExp(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
     function appendMessage(sender, text, productImages = []) {
         const div = document.createElement('div');
         div.className = 'msg ' + sender;
@@ -43,7 +48,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')  // Markdown links
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')  // Bold text
             .replace(/\*(.*?)\*/g, '<em>$1</em>')              // Italic text
-            .replace(/(https?:\/\/(?:www\.)?[^\s<>"']+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">here</a>')  // Plain URLs (after other formatting)
+            // Removed URL processing since AI should not generate URLs in text
             .replace(/### (.*?)(?=<br>|$)/g, '<h3>$1</h3>')    // Headers
             .replace(/## (.*?)(?=<br>|$)/g, '<h4>$1</h4>')     // Sub-headers
             .replace(/### (.*?)(?=<br>|$)/g, '<h3>$1</h3>')    // Headers (again for nested)
@@ -52,14 +57,38 @@ document.addEventListener('DOMContentLoaded', function() {
             .replace(/^\d+\.\s(.*?)(?=<br>|$)/gm, '<li>$1</li>')  // Numbered list items
             .replace(/^\*\s(.*?)(?=<br>|$)/gm, '<li>$1</li>')     // Bullet list items
             .replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>');         // Wrap lists in ul tags
-        
-        // Debug: Log URLs found in the text
-        const urlMatches = text.match(/(https?:\/\/(?:www\.)?[^\s<>"']+)/g);
-        if (urlMatches) {
-            console.log('Found URLs in text:', urlMatches);
+
+        // Hyperlink the first bolded mention of each recommended product to its catalog URL
+        if (productImages && productImages.length > 0) {
+            // Deduplicate by product name
+            const uniqueProductsForLinking = [];
+            const seenNamesForLinking = new Set();
+            productImages.forEach(p => {
+                if (p && p.name && !seenNamesForLinking.has(p.name)) {
+                    uniqueProductsForLinking.push(p);
+                    seenNamesForLinking.add(p.name);
+                }
+            });
+
+            const linkedOnce = new Set();
+            uniqueProductsForLinking.forEach(p => {
+                const productName = (p.name || '').trim();
+                const productUrl = p.url || '';
+                if (!productName || !productUrl || !productUrl.startsWith('http')) return;
+
+                // Match a bolded product name and wrap it once with an anchor
+                const pattern = new RegExp(`(<strong>)(${escapeRegExp(productName)})(</strong>)`, 'i');
+                if (pattern.test(formattedText) && !linkedOnce.has(productName)) {
+                    formattedText = formattedText.replace(
+                        pattern,
+                        `<a href="${productUrl}" target="_blank" rel="noopener noreferrer">$1$2$3</a>`
+                    );
+                    linkedOnce.add(productName);
+                }
+            });
         }
         
-        // Also log the original text to see what the AI is generating
+        // Log the original text to see what the AI is generating
         console.log('Original text from AI:', text);
         
         let messageContent = `<b>${sender === 'user' ? 'You' : 'Assistant'}:</b> ` + formattedText;
@@ -67,16 +96,47 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add product images if available
         if (productImages && productImages.length > 0) {
             messageContent += '<div class="product-images">';
+            
+            // Deduplicate products by name to avoid showing the same product multiple times
+            const uniqueProducts = [];
+            const seenProductNames = new Set();
+            
             productImages.forEach(product => {
+                if (product.name && !seenProductNames.has(product.name)) {
+                    uniqueProducts.push(product);
+                    seenProductNames.add(product.name);
+                }
+            });
+            
+            uniqueProducts.forEach(product => {
                 if (product.img_url) {
-                    messageContent += `
-                        <div class="product-image-container">
-                            <img src="${product.img_url}" alt="${product.name}" class="product-image" 
-                                 onclick="window.open('${product.url}', '_blank')" 
-                                 title="Click to view product">
-                            <div class="product-name">${product.name}</div>
-                        </div>
-                    `;
+                    // Debug: Log product info
+                    console.log('Product:', product.name, 'URL:', product.url);
+                    
+                    // Check if URL is valid
+                    const isValidUrl = product.url && product.url.startsWith('http') && product.url.length > 10;
+                    
+                    if (isValidUrl) {
+                        messageContent += `
+                            <div class="product-image-container">
+                                <a href="${product.url}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit;">
+                                    <img src="${product.img_url}" alt="${product.name}" class="product-image" 
+                                         title="Click to view product">
+                                    <div class="product-name">${product.name}</div>
+                                </a>
+                            </div>
+                        `;
+                    } else {
+                        // Fallback for invalid URLs - just show image without link
+                        console.warn('Invalid URL for product:', product.name, product.url);
+                        messageContent += `
+                            <div class="product-image-container">
+                                <img src="${product.img_url}" alt="${product.name}" class="product-image" 
+                                     title="Product image (link unavailable)">
+                                <div class="product-name">${product.name}</div>
+                            </div>
+                        `;
+                    }
                 }
             });
             messageContent += '</div>';

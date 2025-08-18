@@ -529,12 +529,14 @@ INSTRUCTIONS:
 5. Explain why New Wash is essential and why these products work together as a complete routine
 6. Be warm, supportive, and educational
 7. Only recommend products from the Hairstory catalog above
-8. Include the product URLs when recommending products (use plain URLs only, do not generate HTML or markdown, and include a URL for EVERY product you recommend)
+8. **DO NOT include URLs in your text response** - the product images below will provide clickable links to the products. Focus on describing the products and their benefits naturally.
+9. **AVOID REPETITIVE FORMATTING**: Do not create numbered lists or repeat products in a "routine summary" format. Mention each product once naturally within your conversational response.
 9. Reference specific details from the conversation to show you understand their needs
 10. If no products seem relevant, ask clarifying questions about their hair type and concerns
 11. You can suggest product combinations and routines based on the user's needs
 12. Be specific about which products work best for different hair types and concerns
 13. Always explain how New Wash works as the foundation and how other products complement it
+14. **FORMATTING GUIDELINES**: Keep your response conversational and natural. Avoid creating numbered lists, bullet points, or repetitive product summaries. Mention each product once within the flow of your conversation.
 
 IMPORTANT: Always base your recommendations on the actual product data provided above. Do not make up or reference products that are not in this catalog."""
 
